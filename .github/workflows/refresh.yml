@@ -1,0 +1,43 @@
+name: Refresh currency strength
+
+on:
+  schedule:
+    # 5 past every hour, Sunday-Friday UTC. GitHub cron is always UTC; the FX
+    # week runs Sunday 21:00 to Friday 21:00 UTC, so off-hours runs just rebuild Friday's bars.
+    - cron: "5 * * * 0-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch OANDA candles and build the page
+        run: python build_currency_strength.py --out public/index.html
+        env:
+          OANDA_API_KEY: ${{ secrets.OANDA_API_KEY }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
