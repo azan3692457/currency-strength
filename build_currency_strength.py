@@ -306,7 +306,8 @@ const P = __PAYLOAD__;
 const DISPLAY = P.display;
 const COLOR = {}; DISPLAY.forEach((c,i)=>COLOR[c]=`var(--s${i+1})`);
 let G = "H1";
-const hidden = new Set();
+// Shown by default: USD, EUR, GBP, JPY; click a legend entry to show the rest.
+const hidden = new Set(["CHF", "AUD", "NZD", "CAD"]);
 
 const fmtPct = (v, d=2) => `${v>=0?"+":"−"}${Math.abs(v).toFixed(d)}%`;
 const cls = v => v>0 ? "pos" : v<0 ? "neg" : "";
