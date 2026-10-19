@@ -53,7 +53,9 @@ MAJORS = ["GBP_USD", "EUR_USD", "USD_CHF", "AUD_USD", "NZD_USD", "USD_CAD"]
 CROSSES = ["USD_JPY", "GBP_JPY", "EUR_JPY", "AUD_JPY", "EUR_GBP"]
 
 # (granularity, lookback bars for the score, bars shown on the chart)
-FRAMES = {"H1": (24, 120), "H4": (30, 120)}
+FRAMES = {"H1": (24, 72), "H4": (30, 120)}
+# Bars in the "recent move" column: 4 hours on the 1h tab, 12 hours on the 4h tab.
+RECENT = {"H1": 4, "H4": 3}
 FETCH_COUNT = 400
 PACE_SECONDS = 0.25
 
@@ -101,7 +103,8 @@ def frame_payload(host, key, gran, lookback, shown):
     # Chart: gain vs basket since the first shown bar, in percent.
     lines = {c: [round((basket[c][i] - basket[c][start]) * 100, 3) for i in win] for c in ORDER}
     score = {c: round((basket[c][-1] - basket[c][-1 - lookback]) * 100, 3) for c in ORDER}
-    prev = {c: round((basket[c][-2] - basket[c][-2 - lookback]) * 100, 3) for c in ORDER}
+    last = {c: round((basket[c][-1] - basket[c][-2]) * 100, 3) for c in ORDER}
+    recent = {c: round((basket[c][-1] - basket[c][-1 - RECENT[gran]]) * 100, 3) for c in ORDER}
 
     def pair_row(p):
         base, quote = p.split("_")
@@ -113,7 +116,7 @@ def frame_payload(host, key, gran, lookback, shown):
             "from": stamps[0], "to": stamps[-1],
             "lb_from": dt.datetime.fromisoformat(times[-1 - lookback]).replace(tzinfo=dt.timezone.utc)
                          .astimezone(NY).strftime("%Y-%m-%d %H:%M"),
-            "t": stamps, "lines": lines, "score": score, "prev": prev,
+            "t": stamps, "lines": lines, "score": score, "last": last, "recent": recent, "nrecent": RECENT[gran],
             "pairs": [pair_row(p) for p in MAJORS + CROSSES]}
 
 
@@ -228,6 +231,9 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; letter-spacing:.03em}
 .pill-b{background:color-mix(in srgb, var(--s1) 16%, transparent); color:var(--ink)}
 .pill-m{background:var(--rule-soft); color:var(--muted)}
+.pill-up{background:color-mix(in srgb, var(--s3) 18%, transparent); color:var(--ink)}
+.pill-dn{background:color-mix(in srgb, var(--s8) 18%, transparent); color:var(--ink)}
+.pill-turn{background:color-mix(in srgb, var(--s4) 28%, transparent); color:var(--ink)}
 .splitbar{display:flex; height:10px; border-radius:2px; overflow:hidden; min-width:120px; background:var(--rule-soft); gap:2px}
 
 .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font:500 12px "IBM Plex Mono",ui-monospace,monospace; margin:0 0 8px}
@@ -285,6 +291,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 <section class="method">
   <h2>How it's calculated</h2>
   <p>Each currency's value is its average log price against all eight currencies, itself counting as zero, so it measures the currency against an equal-weighted basket. A score is the change in that value over the window, in percent.</p>
+  <p>Last hour is each currency's move in the newest bar alone. Last 4 hours is its move over the newest four bars (on the 4h tab, the newest three bars, 12 hours). Direction now compares that recent move with the window's gain or loss: <b>Still rising</b> or <b>Still falling</b> when they point the same way, <b>Turning up</b> or <b>Turning down</b> when they disagree, and <b>Flat</b> when the recent move is under 0.03% either way.</p>
   <p>Because the average is over eight, the first currency's score minus the second's equals the pair's own move, give or take about a pip of quoting noise between the 28 prices. The driver table uses that to split each pair's move into its two sides. The side with the larger share drove the move.</p>
   <h2 style="margin-top:22px">4-hour candle times</h2>
   <p>Six candles a day. Times on this page are New York and mark when a bar opens, so a 4h bar shown as 13:00 closes at 17:00 New York, 14:00 Pacific. The week's first candle opens Sunday 14:00 Pacific and the last closes Friday 14:00 Pacific.</p>
@@ -319,18 +326,29 @@ function spanLabel(f){ const hrs = f.lookback*(f.gran==="H1"?1:4), days = hrs/24
   return Number.isInteger(days) ? `${days} trading days` : `${hrs} hours`; }
 const winLabel = f => `${f.lookback} × ${f.gran==="H1"?"1h":"4h"} bars (${spanLabel(f)})`;
 
+// Direction now: compares the recent move with the window's gain or loss.
+const FLAT = 0.03;
+function status(v, r){
+  if(Math.abs(r) < FLAT) return `<span class="pill pill-m">Flat</span>`;
+  if(r>0) return v>=0 ? `<span class="pill pill-up">Still rising</span>` : `<span class="pill pill-turn">Turning up</span>`;
+  return v<=0 ? `<span class="pill pill-dn">Still falling</span>` : `<span class="pill pill-turn">Turning down</span>`;
+}
+
 function renderRank(f){
-  const rows = DISPLAY.map(c=>({c, v:f.score[c], d:f.score[c]-f.prev[c]})).sort((a,b)=>b.v-a.v);
+  const rows = DISPLAY.map(c=>({c, v:f.score[c], l:f.last[c], r:f.recent[c]})).sort((a,b)=>b.v-a.v);
+  const unit = f.gran==="H1" ? 1 : 4, recentLbl = `Last ${f.nrecent*unit} hours`, lastLbl = unit===1 ? "Last hour" : "Last bar (4h)";
   const max = Math.max(...rows.map(r=>Math.abs(r.v)), 0.01);
   document.getElementById("rank").innerHTML = `<thead><tr><th>#</th><th style="text-align:left">Currency</th>
-    <th>Gain / loss</th><th class="barcell"></th><th class="grp">Change vs prior bar</th></tr></thead><tbody>${
+    <th>Gain / loss</th><th class="barcell"></th><th class="grp">${lastLbl}</th><th>${recentLbl}</th><th>Direction now</th></tr></thead><tbody>${
     rows.map((r,i)=>{
       const w = Math.abs(r.v)/max*50;
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
       return `<tr><td>${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${r.c}</td>
         <td class="${cls(r.v)}">${fmtPct(r.v)}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div></div></td>
-        <td class="grp ${cls(r.d)}">${fmtPct(r.d,3)}</td></tr>`;}).join("")}</tbody>`;
+        <td class="grp ${cls(r.l)}">${fmtPct(r.l)}</td>
+        <td class="${cls(r.r)}">${fmtPct(r.r)}</td>
+        <td>${status(r.v, r.r)}</td></tr>`;}).join("")}</tbody>`;
   document.getElementById("rank-lede").textContent =
     `Each currency's gain or loss against an equal-weighted basket of all eight, over the last ${winLabel(f)}, from ${fmtT(f.lb_from)} to ${fmtT(f.to)}.`;
 }
