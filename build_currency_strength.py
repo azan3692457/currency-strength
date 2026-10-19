@@ -217,7 +217,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
   font-family:"IBM Plex Mono",ui-monospace,monospace}
 .stable th{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600; border-bottom:1px solid var(--rule)}
 .stable td:first-child, .stable th:first-child{text-align:left; font-weight:600}
-.stable .neg{color:var(--dn-vivid)} .stable .pos{color:var(--up-vivid)}
+.stable .neg{color:var(--dn-vivid)} .stable .pos{color:var(--up-vivid)} .stable .flat{color:var(--muted)}
 .stable .grp{border-left:1px solid var(--rule-soft)}
 .stable tbody tr:hover td{background:var(--rule-soft)}
 .stable tr.div-top td{border-top:2px solid var(--rule)}
@@ -231,9 +231,6 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; letter-spacing:.03em}
 .pill-b{background:color-mix(in srgb, var(--s1) 16%, transparent); color:var(--ink)}
 .pill-m{background:var(--rule-soft); color:var(--muted)}
-.pill-up{background:color-mix(in srgb, var(--s3) 18%, transparent); color:var(--ink)}
-.pill-dn{background:color-mix(in srgb, var(--s8) 18%, transparent); color:var(--ink)}
-.pill-turn{background:color-mix(in srgb, var(--s4) 28%, transparent); color:var(--ink)}
 .splitbar{display:flex; height:10px; border-radius:2px; overflow:hidden; min-width:120px; background:var(--rule-soft); gap:2px}
 
 .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font:500 12px "IBM Plex Mono",ui-monospace,monospace; margin:0 0 8px}
@@ -291,7 +288,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 <section class="method">
   <h2>How it's calculated</h2>
   <p>Each currency's value is its average log price against all eight currencies, itself counting as zero, so it measures the currency against an equal-weighted basket. A score is the change in that value over the window, in percent.</p>
-  <p>Last hour is each currency's move in the newest bar alone. Last 4 hours is its move over the newest four bars (on the 4h tab, the newest three bars, 12 hours). Direction now compares that recent move with the window's gain or loss: <b>Still rising</b> or <b>Still falling</b> when they point the same way, <b>Turning up</b> or <b>Turning down</b> when they disagree, and <b>Flat</b> when the recent move is under 0.03% either way.</p>
+  <p>Last hour is each currency's move in the newest bar alone. Last 4 hours is its move over the newest four bars (on the 4h tab, the newest three bars, 12 hours). A move that rounds to 0.00% shows grey.</p>
   <p>Because the average is over eight, the first currency's score minus the second's equals the pair's own move, give or take about a pip of quoting noise between the 28 prices. The driver table uses that to split each pair's move into its two sides. The side with the larger share drove the move.</p>
   <h2 style="margin-top:22px">4-hour candle times</h2>
   <p>Six candles a day. Times on this page are New York and mark when a bar opens, so a 4h bar shown as 13:00 closes at 17:00 New York, 14:00 Pacific. The week's first candle opens Sunday 14:00 Pacific and the last closes Friday 14:00 Pacific.</p>
@@ -318,6 +315,10 @@ const hidden = new Set(["CHF", "AUD", "NZD", "CAD"]);
 
 const fmtPct = (v, d=2) => `${v>=0?"+":"−"}${Math.abs(v).toFixed(d)}%`;
 const cls = v => v>0 ? "pos" : v<0 ? "neg" : "";
+// Recent-move cells: anything that rounds to 0.00% shows grey as "0.00%".
+const r2 = v => Math.round(v*100)/100;
+const clsR = v => r2(v)===0 ? "flat" : cls(v);
+const fmtR = v => r2(v)===0 ? "0.00%" : fmtPct(v);
 function fmtT(s){ const [d,t] = s.split(" "); const dd = new Date(d+"T00:00:00Z");
   return `${dd.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"})} ${t}`; }
 function spanLabel(f){ const hrs = f.lookback*(f.gran==="H1"?1:4), days = hrs/24;
@@ -326,29 +327,20 @@ function spanLabel(f){ const hrs = f.lookback*(f.gran==="H1"?1:4), days = hrs/24
   return Number.isInteger(days) ? `${days} trading days` : `${hrs} hours`; }
 const winLabel = f => `${f.lookback} × ${f.gran==="H1"?"1h":"4h"} bars (${spanLabel(f)})`;
 
-// Direction now: compares the recent move with the window's gain or loss.
-const FLAT = 0.03;
-function status(v, r){
-  if(Math.abs(r) < FLAT) return `<span class="pill pill-m">Flat</span>`;
-  if(r>0) return v>=0 ? `<span class="pill pill-up">Still rising</span>` : `<span class="pill pill-turn">Turning up</span>`;
-  return v<=0 ? `<span class="pill pill-dn">Still falling</span>` : `<span class="pill pill-turn">Turning down</span>`;
-}
-
 function renderRank(f){
   const rows = DISPLAY.map(c=>({c, v:f.score[c], l:f.last[c], r:f.recent[c]})).sort((a,b)=>b.v-a.v);
   const unit = f.gran==="H1" ? 1 : 4, recentLbl = `Last ${f.nrecent*unit} hours`, lastLbl = unit===1 ? "Last hour" : "Last bar (4h)";
   const max = Math.max(...rows.map(r=>Math.abs(r.v)), 0.01);
   document.getElementById("rank").innerHTML = `<thead><tr><th>#</th><th style="text-align:left">Currency</th>
-    <th>Gain / loss</th><th class="barcell"></th><th class="grp">${lastLbl}</th><th>${recentLbl}</th><th>Direction now</th></tr></thead><tbody>${
+    <th>Gain / loss</th><th class="barcell"></th><th class="grp">${lastLbl}</th><th>${recentLbl}</th></tr></thead><tbody>${
     rows.map((r,i)=>{
       const w = Math.abs(r.v)/max*50;
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
       return `<tr><td>${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${r.c}</td>
         <td class="${cls(r.v)}">${fmtPct(r.v)}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div></div></td>
-        <td class="grp ${cls(r.l)}">${fmtPct(r.l)}</td>
-        <td class="${cls(r.r)}">${fmtPct(r.r)}</td>
-        <td>${status(r.v, r.r)}</td></tr>`;}).join("")}</tbody>`;
+        <td class="grp ${clsR(r.l)}">${fmtR(r.l)}</td>
+        <td class="${clsR(r.r)}">${fmtR(r.r)}</td></tr>`;}).join("")}</tbody>`;
   document.getElementById("rank-lede").textContent =
     `Each currency's gain or loss against an equal-weighted basket of all eight, over the last ${winLabel(f)}, from ${fmtT(f.lb_from)} to ${fmtT(f.to)}.`;
 }
