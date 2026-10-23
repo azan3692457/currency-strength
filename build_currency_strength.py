@@ -53,9 +53,9 @@ MAJORS = ["GBP_USD", "EUR_USD", "USD_CHF", "AUD_USD", "NZD_USD", "USD_CAD"]
 CROSSES = ["USD_JPY", "GBP_JPY", "EUR_JPY", "AUD_JPY", "EUR_GBP"]
 
 # (granularity, lookback bars for the score, bars shown on the chart)
-FRAMES = {"H1": (24, 72), "H4": (30, 120)}
-# Bars in the "recent move" column: 4 hours on the 1h tab, 12 hours on the 4h tab.
-RECENT = {"H1": 4, "H4": 3}
+FRAMES = {"H1": (24, 72), "H4": (30, 60)}
+# Bars in the "recent move" column: 4 hours on the 1h tab, 24 hours on the 4h tab.
+RECENT = {"H1": 4, "H4": 6}
 FETCH_COUNT = 400
 PACE_SECONDS = 0.25
 
@@ -237,6 +237,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font:500 12px "IBM Plex Mono",ui-monospace,monospace; margin:0 0 8px}
 .legend button{all:unset; cursor:pointer; display:inline-flex; align-items:center}
 .legend button[aria-pressed="false"]{opacity:.35}
+.flag{font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; font-size:13px; margin-right:5px; line-height:1}
 .tip{position:absolute; pointer-events:none; background:var(--surface); border:1px solid var(--rule);
   box-shadow:var(--shadow); border-radius:5px; padding:7px 10px; font:12px "IBM Plex Mono",ui-monospace,monospace;
   font-variant-numeric:tabular-nums; min-width:150px}
@@ -289,7 +290,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 <section class="method">
   <h2>How it's calculated</h2>
   <p>Each currency's value is its average log price against all eight currencies, itself counting as zero, so it measures the currency against an equal-weighted basket. A score is the change in that value over the window, in percent.</p>
-  <p>Last hour is each currency's move in the newest bar alone. Last 4 hours is its move over the newest four bars (on the 4h tab, the newest three bars, 12 hours). A move that rounds to 0.00% shows grey.</p>
+  <p>On the 1h tab, Last hour is each currency's move in the newest bar alone and Last 4 hours is its move over the newest four bars. On the 4h tab, Last 4 hours is the newest bar alone and Last 24 hours is the newest six bars. A move that rounds to 0.00% shows grey.</p>
   <p>Because the average is over eight, the first currency's score minus the second's equals the pair's own move, give or take about a pip of quoting noise between the 28 prices. The driver table uses that to split each pair's move into its two sides. The side with the larger share drove the move.</p>
   <h2 style="margin-top:22px">4-hour candle times</h2>
   <p>Six candles a day. Times on this page are New York and mark when a bar opens, so a 4h bar shown as 13:00 closes at 17:00 New York, 14:00 Pacific. The week's first candle opens Sunday 14:00 Pacific and the last closes Friday 14:00 Pacific.</p>
@@ -310,6 +311,8 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 const P = __PAYLOAD__;
 const DISPLAY = P.display;
 const COLOR = {}; DISPLAY.forEach((c,i)=>COLOR[c]=`var(--s${i+1})`);
+const FLAG = {USD:"🇺🇸", EUR:"🇪🇺", GBP:"🇬🇧", JPY:"🇯🇵", CHF:"🇨🇭", AUD:"🇦🇺", NZD:"🇳🇿", CAD:"🇨🇦"};
+const flag = c => `<span class="flag" aria-hidden="true">${FLAG[c]}</span>`;
 let G = "H1";
 // Shown by default: USD, EUR, GBP, JPY; click a legend entry to show the rest.
 const hidden = new Set(["CHF", "AUD", "NZD", "CAD"]);
@@ -330,14 +333,14 @@ const winLabel = f => `${f.lookback} × ${f.gran==="H1"?"1h":"4h"} bars (${spanL
 
 function renderRank(f){
   const rows = DISPLAY.map(c=>({c, v:f.score[c], l:f.last[c], r:f.recent[c]})).sort((a,b)=>b.v-a.v);
-  const unit = f.gran==="H1" ? 1 : 4, recentLbl = `Last ${f.nrecent*unit} hours`, lastLbl = unit===1 ? "Last hour" : "Last bar (4h)";
+  const unit = f.gran==="H1" ? 1 : 4, recentLbl = `Last ${f.nrecent*unit} hours`, lastLbl = unit===1 ? "Last hour" : "Last 4 hours";
   const max = Math.max(...rows.map(r=>Math.abs(r.v)), 0.01);
   document.getElementById("rank").innerHTML = `<thead><tr><th>#</th><th style="text-align:left">Currency</th>
     <th>Gain / loss</th><th class="barcell"></th><th class="grp">${lastLbl}</th><th>${recentLbl}</th></tr></thead><tbody>${
     rows.map((r,i)=>{
       const w = Math.abs(r.v)/max*50;
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
-      return `<tr><td>${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${r.c}</td>
+      return `<tr><td>${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
         <td class="${cls(r.v)}">${fmtPct(r.v)}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div></div></td>
         <td class="grp ${clsR(r.l)}">${fmtR(r.l)}</td>
