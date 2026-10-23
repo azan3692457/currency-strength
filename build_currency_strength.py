@@ -96,12 +96,13 @@ def frame_payload(host, key, gran, lookback, shown):
             basket[c].append(acc[c] / 8)
 
     n = len(times)
-    win = range(max(0, n - shown), n)
+    win = range(max(lookback, n - shown), n)
     start = win[0]
     stamps = [dt.datetime.fromisoformat(times[i]).replace(tzinfo=dt.timezone.utc)
               .astimezone(NY).strftime("%Y-%m-%d %H:%M") for i in win]
-    # Chart: gain vs basket since the first shown bar, in percent.
-    lines = {c: [round((basket[c][i] - basket[c][start]) * 100, 3) for i in win] for c in ORDER}
+    # Chart: each bar's rolling score, the gain or loss over the `lookback` bars ending there,
+    # so a drawn point never changes and the last point equals the ranking.
+    lines = {c: [round((basket[c][i] - basket[c][i - lookback]) * 100, 3) for i in win] for c in ORDER}
     score = {c: round((basket[c][-1] - basket[c][-1 - lookback]) * 100, 3) for c in ORDER}
     last = {c: round((basket[c][-1] - basket[c][-2]) * 100, 3) for c in ORDER}
     recent = {c: round((basket[c][-1] - basket[c][-1 - RECENT[gran]]) * 100, 3) for c in ORDER}
@@ -393,9 +394,6 @@ function renderChart(f){
   f.t.forEach((t,i)=>{ const d=t.slice(0,10); if(d!==lastD){ lastD=d;
     if(x(i)-lastX>60){ lastX=x(i); const dd=new Date(d+"T00:00:00Z");
       s+=`<line class="grid" x1="${x(i)}" x2="${x(i)}" y1="${T}" y2="${T+PH}"/><text class="axlab" x="${x(i)}" y="${H-8}" text-anchor="middle">${dd.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}</text>`; } } });
-  // Lookback window shading.
-  const lbI = Math.max(0, n-1-f.lookback);
-  s+=`<rect x="${x(lbI)}" y="${T}" width="${x(n-1)-x(lbI)}" height="${PH}" fill="var(--rule-soft)" opacity=".55"/>`;
   vis.forEach(c=>{
     const d=f.lines[c].map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
     s+=`<path d="${d}" fill="none" stroke="${COLOR[c]}" stroke-width="2" stroke-linejoin="round"/>`;
@@ -425,7 +423,7 @@ function renderChart(f){
   };
   document.getElementById("hit").onmouseleave=()=>{ tip.hidden=true; xh.setAttribute("visibility","hidden"); };
   document.getElementById("chart-lede").textContent =
-    `Gain or loss against the basket since ${fmtT(f.from)}, over the last ${f.t.length} bars. A rising line is a strengthening currency. The shaded band is the ranking window.`;
+    `Each point is that bar's gain or loss over the previous ${winLabel(f)}, the same measure as the Ranking, for the last ${f.t.length} bars since ${fmtT(f.from)}. The last point of each line is its Ranking score. Above zero, the currency is up over that window; a rising line means its score is improving.`;
 }
 
 function render(){
