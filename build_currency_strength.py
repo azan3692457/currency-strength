@@ -235,6 +235,10 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; letter-spacing:.03em}
 .pill-b{background:color-mix(in srgb, var(--s1) 16%, transparent); color:var(--ink)}
 .pill-m{background:var(--rule-soft); color:var(--muted)}
+
+#rank tr.zero-cut td{border-top:2px solid color-mix(in srgb, var(--muted) 45%, transparent)}
+.pill-ok{background:color-mix(in srgb, var(--up-vivid) 18%, transparent); color:var(--ink)}
+.pill-warn{background:color-mix(in srgb, #eda100 30%, transparent); color:var(--ink)}
 .pill-ok{background:color-mix(in srgb, var(--up-vivid) 18%, transparent); color:var(--ink)}
 .pill-warn{background:color-mix(in srgb, #eda100 30%, transparent); color:var(--ink)}
 .splitbar{display:flex; height:10px; border-radius:2px; overflow:hidden; min-width:120px; background:var(--rule-soft); gap:2px}
@@ -344,7 +348,9 @@ function renderRank(f){
     rows.map((r,i)=>{
       const w = Math.abs(r.v)/max*50;
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
-      return `<tr><td>${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
+      // Thicker rule above the first currency below zero.
+      const cut = r.v<0 && i>0 && rows[i-1].v>=0;
+      return `<tr${cut?' class="zero-cut"':""}><td>${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
         <td class="${cls(r.v)}">${fmtPct(r.v)}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div></div></td>
         <td class="grp ${clsR(r.l)}">${fmtR(r.l)}</td>
