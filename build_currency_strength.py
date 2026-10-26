@@ -117,6 +117,8 @@ def frame_payload(host, key, gran, lookback, shown):
             "from": stamps[0], "to": stamps[-1],
             "lb_from": dt.datetime.fromisoformat(times[-1 - lookback]).replace(tzinfo=dt.timezone.utc)
                          .astimezone(NY).strftime("%Y-%m-%d %H:%M"),
+            "close_utc": (dt.datetime.fromisoformat(times[-1]).replace(tzinfo=dt.timezone.utc)
+                          + dt.timedelta(hours=1 if gran == "H1" else 4)).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "t": stamps, "lines": lines, "score": score, "last": last, "recent": recent, "nrecent": RECENT[gran],
             "pairs": [pair_row(p) for p in MAJORS + CROSSES]}
 
@@ -130,6 +132,7 @@ def main():
     key = load_api_key()
 
     payload = {"display": DISPLAY,
+               "built": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                "frames": {g: frame_payload(host, key, g, lb, shown) for g, (lb, shown) in FRAMES.items()}}
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     with open(a.out, "w") as f:
@@ -232,12 +235,12 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; letter-spacing:.03em}
 .pill-b{background:color-mix(in srgb, var(--s1) 16%, transparent); color:var(--ink)}
 .pill-m{background:var(--rule-soft); color:var(--muted)}
-<<<<<<< Updated upstream
-=======
+
 #rank tr.zero-cut td{border-top:2px solid color-mix(in srgb, var(--muted) 45%, transparent)}
 .pill-ok{background:color-mix(in srgb, var(--up-vivid) 18%, transparent); color:var(--ink)}
 .pill-warn{background:color-mix(in srgb, #eda100 30%, transparent); color:var(--ink)}
->>>>>>> Stashed changes
+.pill-ok{background:color-mix(in srgb, var(--up-vivid) 18%, transparent); color:var(--ink)}
+.pill-warn{background:color-mix(in srgb, #eda100 30%, transparent); color:var(--ink)}
 .splitbar{display:flex; height:10px; border-radius:2px; overflow:hidden; min-width:120px; background:var(--rule-soft); gap:2px}
 
 .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font:500 12px "IBM Plex Mono",ui-monospace,monospace; margin:0 0 8px}
@@ -259,10 +262,9 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 <header>
   <h1>Currency Strength</h1>
   <dl class="meta">
-    <div><dt>Last bar</dt><dd id="m-asof">—</dd></div>
-    <div><dt>Score window</dt><dd id="m-win">—</dd></div>
-    <div><dt>Pairs</dt><dd>28 · OANDA mid</dd></div>
-    <div><dt>Times</dt><dd>America/New_York</dd></div>
+    <div><dt>Data fetched</dt><dd id="m-fetch">—</dd></div>
+    <div><dt id="m-bar-dt">Latest bar closed</dt><dd id="m-asof">—</dd></div>
+    <div><dt>Status</dt><dd id="m-status">—</dd></div>
   </dl>
 </header>
 
@@ -437,10 +439,35 @@ function renderChart(f){
     `Each point is that bar's gain or loss over the previous ${winLabel(f)}, the same measure as the Ranking, for the last ${f.t.length} bars since ${fmtT(f.from)}. The last point of each line is its Ranking score. Above zero, the currency is up over that window; a rising line means its score is improving.`;
 }
 
+// Header freshness, in the viewer's own time zone.
+const fmtLocal = d => d.toLocaleString("en-US",{weekday:"short", hour:"numeric", minute:"2-digit", timeZoneName:"short"});
+function ago(ms){ const m=Math.round(ms/60000);
+  if(m<1) return "just now"; if(m<60) return `${m} min ago`;
+  const h=Math.floor(m/60), r=m%60; return h<24 ? `${h} h ${r} min ago` : `${Math.floor(h/24)} d ago`; }
+function marketClosed(now){
+  // FX is shut from Friday 17:00 to Sunday 17:00 New York.
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York", weekday:"short", hour:"numeric", hourCycle:"h23"})
+    .formatToParts(now).map(x=>[x.type,x.value]));
+  const h=+p.hour; return p.weekday==="Sat" || (p.weekday==="Fri" && h>=17) || (p.weekday==="Sun" && h<17);
+}
+function renderFresh(){
+  const f=P.frames[G], now=new Date(), built=new Date(P.built), closed=new Date(f.close_utc);
+  const barH = f.gran==="H1" ? 1 : 4;
+  document.getElementById("m-fetch").textContent = `${fmtLocal(built)} · ${ago(now-built)}`;
+  document.getElementById("m-bar-dt").textContent = `Latest ${barH}h bar closed`;
+  document.getElementById("m-asof").textContent = `${fmtLocal(closed)} · ${ago(now-closed)}`;
+  // A new bar is due every barH hours; allow 30 min for the hourly run.
+  const late = now - closed > (barH*60 + 30)*60000;
+  document.getElementById("m-status").innerHTML =
+    marketClosed(now) ? `<span class="pill pill-m">Market closed</span>`
+    : late ? `<span class="pill pill-warn">Behind</span>`
+    : `<span class="pill pill-ok">Up to date</span>`;
+}
+setInterval(renderFresh, 30000);
+
 function render(){
   const f=P.frames[G];
-  document.getElementById("m-asof").textContent=fmtT(f.to);
-  document.getElementById("m-win").textContent=winLabel(f);
+  renderFresh();
   renderRank(f); renderChart(f); renderDrivers(f);
 }
 document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
