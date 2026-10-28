@@ -1,10 +1,10 @@
 name: Refresh currency strength
 
 on:
-  schedule:
-    # 5 past every hour, Sunday-Friday UTC. GitHub cron is always UTC; the FX
-    # week runs Sunday 21:00 to Friday 21:00 UTC, so off-hours runs just rebuild Friday's bars.
-    - cron: "5 * * * 0-5"
+  # schedule:
+  #   # 5 past every hour, Sunday-Friday UTC. GitHub cron is always UTC; the FX
+  #   # week runs Sunday 21:00 to Friday 21:00 UTC, so off-hours runs just rebuild Friday's bars.
+  #   - cron: "5 * * * 0-5"
   workflow_dispatch:
 
 permissions:
