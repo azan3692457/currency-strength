@@ -228,10 +228,11 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .stable tr.latest td{background:color-mix(in srgb, var(--s1) 12%, transparent); font-weight:600}
 .stable tr.latest td:first-child{box-shadow:inset 3px 0 0 var(--s1)}
 .sw{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:7px; vertical-align:0}
-.barcell{width:38%; min-width:140px}
+.barcell{width:50%; min-width:220px}
 .bar{position:relative; height:12px}
 .bar .mid{position:absolute; left:50%; top:-3px; bottom:-3px; width:1px; background:var(--rule)}
 .bar .fill{position:absolute; top:0; height:12px; border-radius:2px}
+.bar .val{position:absolute; top:50%; transform:translateY(-50%); white-space:nowrap; line-height:1}
 .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; letter-spacing:.03em}
 .pill-b{background:color-mix(in srgb, var(--s1) 16%, transparent); color:var(--ink)}
 .pill-m{background:var(--rule-soft); color:var(--muted)}
@@ -344,15 +345,16 @@ function renderRank(f){
   const unit = f.gran==="H1" ? 1 : 4, recentLbl = `Last ${f.nrecent*unit} hours`, lastLbl = unit===1 ? "Last hour" : "Last 4 hours";
   const max = Math.max(...rows.map(r=>Math.abs(r.v)), 0.01);
   document.getElementById("rank").innerHTML = `<thead><tr><th>#</th><th style="text-align:left">Currency</th>
-    <th>Gain / loss</th><th class="barcell"></th><th class="grp">${lastLbl}</th><th>${recentLbl}</th></tr></thead><tbody>${
+    <th class="barcell" style="text-align:center">Gain / loss</th><th class="grp">${lastLbl}</th><th>${recentLbl}</th></tr></thead><tbody>${
     rows.map((r,i)=>{
-      const w = Math.abs(r.v)/max*50;
+      // Bars use up to 36% of the cell each side, leaving room for the value at the tip.
+      const w = Math.abs(r.v)/max*36;
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
       // Thicker rule above the first currency below zero.
       const cut = r.v<0 && i>0 && rows[i-1].v>=0;
       return `<tr${cut?' class="zero-cut"':""}><td>${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
-        <td class="${cls(r.v)}">${fmtPct(r.v)}</td>
-        <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div></div></td>
+        <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div>
+          <span class="val ${cls(r.v)}" style="${r.v>=0 ? `left:calc(50% + ${w}% + 6px)` : `right:calc(50% + ${w}% + 6px)`}">${fmtPct(r.v)}</span></div></td>
         <td class="grp ${clsR(r.l)}">${fmtR(r.l)}</td>
         <td class="${clsR(r.r)}">${fmtR(r.r)}</td></tr>`;}).join("")}</tbody>`;
   document.getElementById("rank-lede").textContent =
