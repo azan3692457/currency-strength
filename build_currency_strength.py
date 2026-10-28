@@ -233,6 +233,17 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .bar .mid{position:absolute; left:50%; top:-3px; bottom:-3px; width:1px; background:var(--rule)}
 .bar .fill{position:absolute; top:0; height:12px; border-radius:2px}
 .bar .val{position:absolute; top:50%; transform:translateY(-50%); white-space:nowrap; line-height:1}
+#rank .ls{display:none}
+/* Phones: drop the rank number and flags, shorten headers, tighten cells so the Ranking fits without sideways scrolling. */
+@media (max-width:600px){
+  .wrap{padding-inline:14px}
+  .panel{padding:12px 8px 8px}
+  #rank .rk, #rank .flag, #rank .lf{display:none}
+  #rank .ls{display:inline}
+  #rank th, #rank td{padding:6px 5px; font-size:12px}
+  #rank .barcell{width:auto; min-width:120px}
+  #rank .sw{margin-right:5px}
+}
 .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; letter-spacing:.03em}
 .pill-b{background:color-mix(in srgb, var(--s1) 16%, transparent); color:var(--ink)}
 .pill-m{background:var(--rule-soft); color:var(--muted)}
@@ -344,15 +355,15 @@ function renderRank(f){
   const rows = DISPLAY.map(c=>({c, v:f.score[c], l:f.last[c], r:f.recent[c]})).sort((a,b)=>b.v-a.v);
   const unit = f.gran==="H1" ? 1 : 4, recentLbl = `Last ${f.nrecent*unit} hours`, lastLbl = unit===1 ? "Last hour" : "Last 4 hours";
   const max = Math.max(...rows.map(r=>Math.abs(r.v)), 0.01);
-  document.getElementById("rank").innerHTML = `<thead><tr><th>#</th><th style="text-align:left">Currency</th>
-    <th class="barcell" style="text-align:center">Gain / loss</th><th class="grp">${lastLbl}</th><th>${recentLbl}</th></tr></thead><tbody>${
+  document.getElementById("rank").innerHTML = `<thead><tr><th class="rk">#</th><th style="text-align:left">Currency</th>
+    <th class="barcell" style="text-align:center">Gain / loss</th><th class="grp"><span class="lf">${lastLbl}</span><span class="ls">${unit===1?"1h":"4h"}</span></th><th><span class="lf">${recentLbl}</span><span class="ls">${f.nrecent*unit}h</span></th></tr></thead><tbody>${
     rows.map((r,i)=>{
       // Bars use up to 36% of the cell each side, leaving room for the value at the tip.
       const w = Math.abs(r.v)/max*36;
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
       // Thicker rule above the first currency below zero.
       const cut = r.v<0 && i>0 && rows[i-1].v>=0;
-      return `<tr${cut?' class="zero-cut"':""}><td>${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
+      return `<tr${cut?' class="zero-cut"':""}><td class="rk">${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div>
           <span class="val ${cls(r.v)}" style="${r.v>=0 ? `left:calc(50% + ${w}% + 6px)` : `right:calc(50% + ${w}% + 6px)`}">${fmtPct(r.v)}</span></div></td>
         <td class="grp ${clsR(r.l)}">${fmtR(r.l)}</td>
