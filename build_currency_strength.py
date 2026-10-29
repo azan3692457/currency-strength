@@ -119,7 +119,10 @@ def frame_payload(host, key, gran, lookback, shown):
                          .astimezone(NY).strftime("%Y-%m-%d %H:%M"),
             "close_utc": (dt.datetime.fromisoformat(times[-1]).replace(tzinfo=dt.timezone.utc)
                           + dt.timedelta(hours=1 if gran == "H1" else 4)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "t": stamps, "lines": lines, "score": score, "last": last, "recent": recent, "nrecent": RECENT[gran],
+            "t": stamps, "lines": lines,
+            # Each currency's path through the ranking window, from 0 at its start to its score at the end.
+            "path": {c: [round((basket[c][i] - basket[c][-1 - lookback]) * 100, 3)
+                         for i in range(len(times) - 1 - lookback, len(times))] for c in ORDER}, "score": score, "last": last, "recent": recent, "nrecent": RECENT[gran],
             "pairs": [pair_row(p) for p in MAJORS + CROSSES]}
 
 
@@ -238,6 +241,10 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .bar .fill{position:absolute; top:0; height:12px; border-radius:2px}
 .bar .val{position:absolute; top:50%; transform:translateY(-50%); white-space:nowrap; line-height:1}
 #rank .ls{display:none}
+#rank .sparkcell{padding-block:2px; width:1%}
+.spark{display:block; width:130px; height:30px}
+#rank .recent div{line-height:1.25}
+#rank .recent .sub{font-size:11px; opacity:.75}
 /* Phones: drop the rank number and flags, shorten headers, tighten cells so the Ranking fits without sideways scrolling. */
 @media (max-width:600px){
   .wrap{padding-inline:14px}
@@ -247,6 +254,8 @@ svg{display:block; width:100%; height:auto; overflow:visible}
   #rank th, #rank td{padding:6px 5px; font-size:12px}
   #rank .barcell{width:auto; min-width:120px}
   #rank .sw{margin-right:5px}
+  #rank .spark{width:54px; height:22px}
+  #rank .barcell{min-width:112px}
 }
 .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; letter-spacing:.03em}
 .pill-b{background:color-mix(in srgb, var(--s1) 16%, transparent); color:var(--ink)}
@@ -314,7 +323,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 <section class="method">
   <h2>How it's calculated</h2>
   <p>Each currency's value is its average log price against all eight currencies, itself counting as zero, so it measures the currency against an equal-weighted basket. A score is the change in that value over the window, in percent.</p>
-  <p>On the 1h tab, Last hour is each currency's move in the newest bar alone and Last 4 hours is its move over the newest four bars. On the 4h tab, Last 4 hours is the newest bar alone and Last 24 hours is the newest six bars. A move that rounds to 0.00% shows grey.</p>
+  <p>The small line next to each bar shows the currency's most recent stretch against the basket, starting from the dashed zero line: the last 4 hours on the 1h tab, one point per hour, and the last 24 hours on the 4h tab, one point per 4h bar. Each line is scaled to fit its own row, so it shows the shape of the move; the bar shows its size. Change gives that stretch's move with an arrow, and under it the newest bar's move alone. A move that rounds to 0.00% shows grey.</p>
   <p>Because the average is over eight, the first currency's score minus the second's equals the pair's own move, give or take about a pip of quoting noise between the 28 prices. The driver table uses that to split each pair's move into its two sides. The side with the larger share drove the move.</p>
   <h2 style="margin-top:22px">4-hour candle times</h2>
   <p>Six candles a day. Times on this page are New York and mark when a bar opens, so a 4h bar shown as 13:00 closes at 17:00 New York, 14:00 Pacific. The week's first candle opens Sunday 14:00 Pacific and the last closes Friday 14:00 Pacific.</p>
@@ -355,12 +364,30 @@ function spanLabel(f){ const hrs = f.lookback*(f.gran==="H1"?1:4), days = hrs/24
   return Number.isInteger(days) ? `${days} trading days` : `${hrs} hours`; }
 const winLabel = f => `${f.lookback} × ${f.gran==="H1"?"1h":"4h"} bars (${spanLabel(f)})`;
 
+// Ranking sparkline: the currency's path through the score window, scaled to its own range (the bar gives the size),
+// in grey, with the most recent stretch (Last 4 hours / Last 24 hours) in the currency's colour.
+function spark(path, k, color, lim){
+  const W=130, H=30, n=path.length, x=i=>1+i/(n-1)*(W-6), y=v=>H/2-v/lim*(H/2-3);
+  const pts=path.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  const head=pts.slice(0, n-k).join(" "), tail=pts.slice(n-k-1).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <line x1="1" x2="${W-5}" y1="${H/2}" y2="${H/2}" class="zero"/>
+    <polyline points="${head}" fill="none" stroke="var(--muted)" stroke-width="1.3" opacity=".8"/>
+    <polyline points="${tail}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${x(n-1).toFixed(1)}" cy="${y(path[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;
+}
+const arrow = v => r2(v)>0 ? "▲" : r2(v)<0 ? "▼" : "–";
+
 function renderRank(f){
   const rows = DISPLAY.map(c=>({c, v:f.score[c], l:f.last[c], r:f.recent[c]})).sort((a,b)=>b.v-a.v);
   const unit = f.gran==="H1" ? 1 : 4, recentLbl = `Last ${f.nrecent*unit} hours`, lastLbl = unit===1 ? "Last hour" : "Last 4 hours";
+  const pathLbl = recentLbl, lastShort = unit===1 ? "1h" : "4h", recentShort = `${f.nrecent*unit}h`;
+  // The line covers the recent stretch only (last 4 hours on the 1h tab, last 24 hours on the 4h tab),
+  // rebased to start at zero, all in colour.
+  const pathOf = c => { const p=f.path[c].slice(-(f.nrecent+1)); return p.map(v=>v-p[0]); };
   const max = Math.max(...rows.map(r=>Math.abs(r.v)), 0.01);
   document.getElementById("rank").innerHTML = `<thead><tr><th class="rk">#</th><th style="text-align:left">Currency</th>
-    <th class="barcell" style="text-align:center">Gain / loss</th><th class="grp"><span class="lf">${lastLbl}</span><span class="ls">${unit===1?"1h":"4h"}</span></th><th><span class="lf">${recentLbl}</span><span class="ls">${f.nrecent*unit}h</span></th></tr></thead><tbody>${
+    <th class="barcell" style="text-align:center">Gain / loss</th><th class="grp" style="text-align:left"><span class="lf">${pathLbl}</span><span class="ls">${recentShort}</span></th><th><span class="lf">Change</span><span class="ls">Chg</span></th></tr></thead><tbody>${
     rows.map((r,i)=>{
       // Bars use up to 36% of the cell each side, leaving room for the value at the tip.
       const w = Math.abs(r.v)/max*36;
@@ -370,8 +397,9 @@ function renderRank(f){
       return `<tr${cut?' class="zero-cut"':""}><td class="rk">${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div>
           <span class="val ${cls(r.v)}" style="${r.v>=0 ? `left:calc(50% + ${w}% + 6px)` : `right:calc(50% + ${w}% + 6px)`}">${fmtPct(r.v)}</span></div></td>
-        <td class="grp ${clsR(r.l)}">${fmtR(r.l)}</td>
-        <td class="${clsR(r.r)}">${fmtR(r.r)}</td></tr>`;}).join("")}</tbody>`;
+        <td class="grp sparkcell">${spark(pathOf(r.c), f.nrecent, COLOR[r.c], Math.max(...pathOf(r.c).map(Math.abs), 0.05))}</td>
+        <td class="recent"><div class="${clsR(r.r)}">${arrow(r.r)} ${fmtR(r.r)}</div>
+          <div class="sub ${clsR(r.l)}">${lastShort} ${fmtR(r.l)}</div></td></tr>`;}).join("")}</tbody>`;
   document.getElementById("rank-lede").textContent =
     `Each currency's gain or loss against an equal-weighted basket of all eight, over the last ${winLabel(f)}, from ${fmtT(f.lb_from)} to ${fmtT(f.to)}.`;
 }
