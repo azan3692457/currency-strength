@@ -202,9 +202,13 @@ section{margin-bottom:48px}
 .cnote{text-transform:none; letter-spacing:0; font-weight:400}
 svg{display:block; width:100%; height:auto; overflow:visible}
 .grid{stroke:var(--rule-soft); stroke-width:1}
+.grid-day{stroke:var(--rule); stroke-width:1}
+.axdate{fill:var(--ink); font-weight:600}
 .zero{stroke:var(--muted); stroke-width:1; stroke-dasharray:3 3; opacity:.7}
 .axlab{fill:var(--muted); font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:10px}
 .dlab{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px; font-weight:600; fill:var(--ink)}
+.dlab .dval{font-weight:400; fill:var(--muted)}
+.edge{stroke:var(--rule); stroke-width:1}
 .pl{paint-order:stroke; stroke:var(--surface); stroke-width:3px; stroke-linejoin:round}
 
 .tabs{display:flex; gap:6px; margin:0 0 18px}
@@ -400,11 +404,25 @@ function renderLegend(){
     const c=b.dataset.c; hidden.has(c)?hidden.delete(c):hidden.add(c); renderLegend(); renderChart(P.frames[G]); });
 }
 
+// Axis label: "0%" at zero, a plus sign on positive values.
+function axLab(v, d){ const r=+v.toFixed(d); return r===0 ? "0%" : `${r>0?"+":"−"}${Math.abs(r).toFixed(d)}%`; }
 function niceStep(span){ const raw=span/6, m=Math.pow(10,Math.floor(Math.log10(raw)));
   return [1,2,2.5,5,10].map(k=>k*m).find(s=>s>=raw); }
 
+// Phones: the 1h chart shows only the last 24 bars (the 4h chart the last 30, one week), and the
+// chart is drawn at the screen's own width so its text stays readable instead of being shrunk.
+const NARROW = 600, PHONE_BARS = {H1:24, H4:30};
+function narrowView(f){
+  const k = PHONE_BARS[f.gran];
+  return {...f, t:f.t.slice(-k), from:f.t.slice(-k)[0],
+          lines:Object.fromEntries(Object.entries(f.lines).map(([c,a])=>[c,a.slice(-k)]))};
+}
+
 function renderChart(f){
-  const W=1100, H=420, L=48, R=56, T=10, B=28, PW=W-L-R, PH=H-T-B;
+  const cw = document.getElementById("chart").clientWidth, narrow = cw>0 && cw<NARROW;
+  if(narrow) f = narrowView(f);
+  const W = narrow ? Math.max(300, cw) : 1100, H = narrow ? 300 : 420,
+        L = narrow ? 40 : 48, R = narrow ? 96 : 118, T=10, B=28, PW=W-L-R, PH=H-T-B;
   const vis = DISPLAY.filter(c=>!hidden.has(c));
   const vals = vis.flatMap(c=>f.lines[c]).concat([0]);
   let lo=Math.min(...vals), hi=Math.max(...vals);
@@ -412,22 +430,32 @@ function renderChart(f){
   const n=f.t.length, x=i=>L+i/(n-1)*PW, y=v=>T+(hi-v)/(hi-lo)*PH;
   let s=`<svg viewBox="0 0 ${W} ${H}" id="csvg">`;
   for(let v=lo; v<=hi+1e-9; v+=step){
-    s+=`<line class="grid" x1="${L}" x2="${L+PW}" y1="${y(v)}" y2="${y(v)}"/><text class="axlab" x="${L-6}" y="${y(v)+3}" text-anchor="end">${v.toFixed(step<0.1?2:1)}%</text>`;
+    s+=`<line class="grid" x1="${L}" x2="${L+PW}" y1="${y(v)}" y2="${y(v)}"/><text class="axlab" x="${L-6}" y="${y(v)+3}" text-anchor="end">${axLab(v, step<0.1?2:1)}</text>`;
   }
   s+=`<line class="zero" x1="${L}" x2="${L+PW}" y1="${y(0)}" y2="${y(0)}"/>`;
-  // Day labels at the first bar of each New York date.
-  let lastD=null, lastX=-1e9;
-  f.t.forEach((t,i)=>{ const d=t.slice(0,10); if(d!==lastD){ lastD=d;
-    if(x(i)-lastX>60){ lastX=x(i); const dd=new Date(d+"T00:00:00Z");
-      s+=`<line class="grid" x1="${x(i)}" x2="${x(i)}" y1="${T}" y2="${T+PH}"/><text class="axlab" x="${x(i)}" y="${H-8}" text-anchor="middle">${dd.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}</text>`; } } });
+  // One gridline per day at 17:00 New York, the FX daily close, labelled with its date.
+  let lastD=-1e9;
+  f.t.forEach((t,i)=>{
+    if(t.slice(11)!=="17:00") return;
+    const xi=x(i), d=t.slice(0,10);
+    s+=`<line class="grid-day" x1="${xi}" x2="${xi}" y1="${T}" y2="${T+PH}"/>`;
+    if(xi-lastD>=80){ lastD=xi; const dd=new Date(d+"T00:00:00Z");
+      s+=`<text class="axlab axdate" x="${xi}" y="${H-8}" text-anchor="middle">${dd.toLocaleDateString("en-US",{weekday:"short",timeZone:"UTC"})} ${dd.getUTCDate()} 17:00</text>`; }
+  });
   vis.forEach(c=>{
     const d=f.lines[c].map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
     s+=`<path d="${d}" fill="none" stroke="${COLOR[c]}" stroke-width="2" stroke-linejoin="round"/>`;
   });
-  // Direct labels at the right edge, nudged apart so they don't overlap.
-  const ends = vis.map(c=>({c, y:y(f.lines[c][n-1])})).sort((a,b)=>a.y-b.y);
-  for(let i=1;i<ends.length;i++) if(ends[i].y-ends[i-1].y<13) ends[i].y=ends[i-1].y+13;
-  ends.forEach(e=>{ s+=`<text class="dlab pl" x="${L+PW+6}" y="${e.y+4}">${e.c}</text>`; });
+  // Right edge: close the plot with an axis line, mark each line's last point, and tie it
+  // to its label (currency and latest value) with a short leader, labels nudged apart.
+  s+=`<line class="edge" x1="${L+PW}" x2="${L+PW}" y1="${T}" y2="${T+PH}"/>`;
+  const ends = vis.map(c=>({c, v:f.lines[c][n-1], y0:y(f.lines[c][n-1])})).sort((a,b)=>a.y0-b.y0);
+  ends.forEach((e,i)=>{ e.y = i && e.y0-ends[i-1].y<14 ? ends[i-1].y+14 : e.y0; });
+  ends.forEach(e=>{
+    s+=`<path d="M${L+PW},${e.y0.toFixed(1)} L${L+PW+8},${e.y0.toFixed(1)} L${L+PW+14},${e.y.toFixed(1)} L${L+PW+18},${e.y.toFixed(1)}" fill="none" stroke="${COLOR[e.c]}" stroke-width="1.5"/>`;
+    s+=`<circle cx="${L+PW}" cy="${e.y0.toFixed(1)}" r="3.5" fill="${COLOR[e.c]}" stroke="var(--surface)" stroke-width="1.5"/>`;
+    s+=`<text class="dlab" x="${L+PW+22}" y="${(e.y+4).toFixed(1)}">${e.c} <tspan class="dval">${fmtPct(e.v)}</tspan></text>`;
+  });
   s+=`<line id="xh" x1="0" x2="0" y1="${T}" y2="${T+PH}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>`;
   s+=`<rect x="${L}" y="${T}" width="${PW}" height="${PH}" fill="transparent" id="hit"/></svg>`;
   document.getElementById("chart").innerHTML=s;
@@ -486,6 +514,7 @@ function render(){
 document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
   G=b.dataset.g; document.querySelectorAll("#tabs button").forEach(x=>x.setAttribute("aria-pressed",x===b)); render(); });
 renderLegend(); render();
+let resizeT; window.addEventListener("resize", ()=>{ clearTimeout(resizeT); resizeT=setTimeout(()=>renderChart(P.frames[G]), 150); });
 // Mark the 4h candle the latest pull ended on (bar open time, New York).
 (function(){
   const last = P.frames.H4.to, open = last.slice(11);
