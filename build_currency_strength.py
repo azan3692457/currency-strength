@@ -21,6 +21,7 @@ import datetime as dt
 import json
 import math
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -60,21 +61,41 @@ FETCH_COUNT = 400
 PACE_SECONDS = 0.25
 
 
+AUTH_RETRIES = 3        # extra tries after a 401; OANDA sometimes rejects a valid key
+AUTH_WAIT_SECONDS = 5
+_ok_requests = 0        # requests that succeeded so far in this build, for the 401 log
+
+
 def fetch(host, key, pair, gran):
+    global _ok_requests
     url = (f"{host}/v3/instruments/{pair}/candles?granularity={gran}&price=M"
            f"&count={FETCH_COUNT}&alignmentTimezone=America%2FNew_York&dailyAlignment=17")
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key}"})
-    for attempt in range(4):
+    attempt = auth_fails = 0
+    while True:
         try:
             with urllib.request.urlopen(req) as resp:
                 candles = json.load(resp)["candles"]
+            if auth_fails:
+                print(f"OANDA 401 cleared: {pair} {gran} succeeded after {auth_fails} retr"
+                      f"{'y' if auth_fails == 1 else 'ies'}", file=sys.stderr)
+            _ok_requests += 1
             return {c["time"][:19]: float(c["mid"]["c"]) for c in candles if c["complete"]}
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                raise SystemExit("OANDA: 401 Unauthorized -- check OANDA_API_KEY in .env")
+                body = e.read()[:200].decode("utf-8", "replace")
+                print(f"OANDA 401 on {pair} {gran} (try {auth_fails + 1} of {AUTH_RETRIES + 1}; "
+                      f"{_ok_requests} requests had succeeded; RequestID {e.headers.get('RequestID', '-')}; "
+                      f"{dt.datetime.now(dt.timezone.utc):%H:%M:%S} UTC): {body}", file=sys.stderr)
+                if auth_fails == AUTH_RETRIES:
+                    raise SystemExit("OANDA: 401 Unauthorized after retries -- check OANDA_API_KEY")
+                auth_fails += 1
+                time.sleep(AUTH_WAIT_SECONDS)
+                continue
             if attempt == 3:
                 raise
-            time.sleep(3 * (attempt + 1))
+            attempt += 1
+            time.sleep(3 * attempt)
 
 
 def frame_payload(host, key, gran, lookback, shown):
