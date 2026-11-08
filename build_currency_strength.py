@@ -349,6 +349,22 @@ const flag = c => `<span class="flag" aria-hidden="true">${FLAG[c]}</span>`;
 let G = "H1";
 // Shown by default: USD, EUR, GBP, JPY; click a legend entry to show the rest.
 const hidden = new Set(["CHF", "AUD", "NZD", "CAD"]);
+// The tab and the currencies shown on the chart live in the URL (?tf=4h&show=USD,GBP),
+// so they survive a reload and a bookmark or shared link opens the same view.
+(function(){
+  const q = new URLSearchParams(location.search);
+  if (q.get("tf") === "4h") G = "H4";
+  if (q.has("show")) {
+    const show = q.get("show").toUpperCase().split(",").filter(c=>DISPLAY.includes(c));
+    hidden.clear(); DISPLAY.filter(c=>!show.includes(c)).forEach(c=>hidden.add(c));
+  }
+})();
+function saveView(){
+  const q = new URLSearchParams(location.search);
+  q.set("tf", G==="H4" ? "4h" : "1h");
+  q.set("show", DISPLAY.filter(c=>!hidden.has(c)).join(","));
+  history.replaceState(null, "", `${location.pathname}?${q.toString().replace(/%2C/g, ",")}${location.hash}`);
+}
 
 const fmtPct = (v, d=2) => `${v>=0?"+":"−"}${Math.abs(v).toFixed(d)}%`;
 const cls = v => v>0 ? "pos" : v<0 ? "neg" : "";
@@ -429,7 +445,7 @@ function renderLegend(){
   document.getElementById("legend").innerHTML = DISPLAY.map(c=>
     `<button data-c="${c}" aria-pressed="${!hidden.has(c)}"><span class="sw" style="background:${COLOR[c]}"></span>${c}</button>`).join("");
   document.querySelectorAll("#legend button").forEach(b=>b.onclick=()=>{
-    const c=b.dataset.c; hidden.has(c)?hidden.delete(c):hidden.add(c); renderLegend(); renderChart(P.frames[G]); });
+    const c=b.dataset.c; hidden.has(c)?hidden.delete(c):hidden.add(c); saveView(); renderLegend(); renderChart(P.frames[G]); });
 }
 
 // Axis label: "0%" at zero, a plus sign on positive values.
@@ -540,7 +556,8 @@ function render(){
   renderRank(f); renderChart(f); renderDrivers(f);
 }
 document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
-  G=b.dataset.g; document.querySelectorAll("#tabs button").forEach(x=>x.setAttribute("aria-pressed",x===b)); render(); });
+  G=b.dataset.g; saveView(); document.querySelectorAll("#tabs button").forEach(x=>x.setAttribute("aria-pressed",x===b)); render(); });
+document.querySelectorAll("#tabs button").forEach(x=>x.setAttribute("aria-pressed", x.dataset.g===G));
 renderLegend(); render();
 let resizeT; window.addEventListener("resize", ()=>{ clearTimeout(resizeT); resizeT=setTimeout(()=>renderChart(P.frames[G]), 150); });
 // Mark the 4h candle the latest pull ended on (bar open time, New York).
