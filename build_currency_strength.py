@@ -302,6 +302,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .pill-warn{background:color-mix(in srgb, #eda100 30%, transparent); color:var(--ink)}
 .splitbar{display:flex; height:10px; border-radius:2px; overflow:hidden; min-width:120px; background:var(--rule-soft); gap:2px}
 
+#rank .mv{font-size:11px; margin-left:5px; font-variant-numeric:tabular-nums}
 .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font:500 12px "IBM Plex Mono",ui-monospace,monospace; margin:0 0 8px}
 .legend button{all:unset; cursor:pointer; display:inline-flex; align-items:center}
 .legend button[aria-pressed="false"]{opacity:.35}
@@ -430,6 +431,11 @@ const arrow = v => r2(v)>0 ? "▲" : r2(v)<0 ? "▼" : "–";
 
 function renderRank(f){
   const rows = DISPLAY.map(c=>({c, v:f.score[c], l:f.last[c], r:f.recent[c]})).sort((a,b)=>b.v-a.v);
+  // Rank at the previous bar, from the chart's second-to-last point (the same measure one bar earlier).
+  const n = f.t.length, prev = [...DISPLAY].sort((a,b)=>f.lines[b][n-2]-f.lines[a][n-2]);
+  const moved = (c,i) => { const d = prev.indexOf(c) - i;
+    return d>0 ? `<span class="mv pos" title="Up ${d} since the previous bar">↑${d}</span>`
+         : d<0 ? `<span class="mv neg" title="Down ${-d} since the previous bar">↓${-d}</span>` : ""; };
   const unit = f.gran==="H1" ? 1 : 4, recentLbl = `Last ${f.nrecent*unit} hours`, lastLbl = unit===1 ? "Last hour" : "Last 4 hours";
   const pathLbl = recentLbl, lastShort = unit===1 ? "1h" : "4h", recentShort = `${f.nrecent*unit}h`;
   // The line covers the recent stretch only (last 4 hours on the 1h tab, last 24 hours on the 4h tab),
@@ -446,7 +452,7 @@ function renderRank(f){
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
       // Thicker rule above the first currency below zero.
       const cut = r.v<0 && i>0 && rows[i-1].v>=0;
-      return `<tr${cut?' class="zero-cut"':""}><td class="rk">${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
+      return `<tr${cut?' class="zero-cut"':""}><td class="rk">${i+1}</td><td style="text-align:left;white-space:nowrap"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}${moved(r.c,i)}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div>
           <span class="val ${cls(r.v)}" style="${phone ? (r.v>=0 ? "right:calc(50% + 5px)" : "left:calc(50% + 5px)") : r.v>=0 ? `left:calc(50% + ${w}% + 6px)` : `right:calc(50% + ${w}% + 6px)`}">${fmtPct(r.v)}</span></div></td>
         <td class="grp sparkcell">${spark(pathOf(r.c), f.nrecent, COLOR[r.c], Math.max(...pathOf(r.c).map(Math.abs), 0.05))}</td>
