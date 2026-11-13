@@ -54,7 +54,7 @@ MAJORS = ["GBP_USD", "EUR_USD", "USD_CHF", "AUD_USD", "NZD_USD", "USD_CAD"]
 CROSSES = ["USD_JPY", "GBP_JPY", "EUR_JPY", "AUD_JPY", "EUR_GBP"]
 
 # (granularity, lookback bars for the score, bars shown on the chart)
-FRAMES = {"H1": (24, 72), "H4": (30, 60)}
+FRAMES = {"H1": (24, 72), "H4": (30, 30)}
 # Bars in the "recent move" column: 4 hours on the 1h tab, 24 hours on the 4h tab.
 RECENT = {"H1": 4, "H4": 6}
 FETCH_COUNT = 400
@@ -236,6 +236,10 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .pl{paint-order:stroke; stroke:var(--surface); stroke-width:3px; stroke-linejoin:round}
 
 .tabs{display:flex; gap:6px; margin:0 0 18px}
+/* Section heading with the 1 hour / 4 hour switch beside it; both switches change the same tab. */
+.sec-head{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 16px}
+.sec-head h2{margin-bottom:0}
+.sec-head .tabs{margin:0}
 .tabs button{font:600 12.5px "IBM Plex Mono",ui-monospace,monospace; padding:6px 14px; border-radius:5px;
   border:1px solid var(--rule); background:var(--surface); color:var(--muted); cursor:pointer}
 .tabs button[aria-pressed="true"]{color:var(--ink); border-color:var(--ink)}
@@ -264,8 +268,13 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 #rank .ls{display:none}
 #rank .sparkcell{padding-block:2px; width:1%}
 .spark{display:block; width:130px; height:30px}
-#rank .recent div{line-height:1.25}
-#rank .recent .sub{font-size:11px; opacity:.75}
+/* Change: two labelled rows, the recent stretch and the newest bar. */
+#rank tbody tr{height:50px}
+#rank .recent{white-space:nowrap}
+#rank .chg{display:grid; grid-template-columns:auto auto; column-gap:8px; justify-content:end; line-height:1.3; font-variant-numeric:tabular-nums}
+#rank .chg .k{color:var(--muted); font-size:11px; text-align:left; align-self:center}
+#rank .chg .v{text-align:right}
+#rank .chg .v.sm{font-size:12px}
 /* Phones: drop the rank number and flags, shorten headers, tighten cells so the Ranking fits without sideways scrolling. */
 @media (max-width:600px){
   .wrap{padding-inline:14px}
@@ -277,6 +286,10 @@ svg{display:block; width:100%; height:auto; overflow:visible}
   #rank .sw{margin-right:5px}
   #rank .spark{width:54px; height:22px}
   #rank .barcell{min-width:112px}
+  #rank .chg{column-gap:4px}
+  #rank .chg .ar{display:none}
+  #rank tbody tr{height:auto}
+  #rank th .wl{display:block}
 }
 .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; letter-spacing:.03em}
 .pill-b{background:color-mix(in srgb, var(--s1) 16%, transparent); color:var(--ink)}
@@ -314,19 +327,23 @@ svg{display:block; width:100%; height:auto; overflow:visible}
   </dl>
 </header>
 
-<div class="tabs" id="tabs">
-  <button data-g="H1" aria-pressed="true">1 hour</button>
-  <button data-g="H4" aria-pressed="false">4 hour</button>
-</div>
 
 <section>
-  <h2>Ranking</h2>
+  <div class="sec-head"><h2>Ranking</h2>
+    <div class="tabs" data-tabs>
+      <button data-g="H1" aria-pressed="true">1 hour</button>
+      <button data-g="H4" aria-pressed="false">4 hour</button>
+    </div></div>
   <p class="lede" id="rank-lede"></p>
   <div class="panel"><div class="stable-wrap"><table class="stable" id="rank"></table></div></div>
 </section>
 
 <section>
-  <h2>Strength Over Time</h2>
+  <div class="sec-head"><h2>Strength Over Time</h2>
+    <div class="tabs" data-tabs>
+      <button data-g="H1" aria-pressed="true">1 hour</button>
+      <button data-g="H4" aria-pressed="false">4 hour</button>
+    </div></div>
   <p class="lede" id="chart-lede"></p>
   <div class="panel" id="chart-panel">
     <div class="legend" id="legend"></div>
@@ -342,11 +359,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 </section>
 
 <section class="method">
-  <h2>How it's calculated</h2>
-  <p>Each currency's value is its average log price against all eight currencies, itself counting as zero, so it measures the currency against an equal-weighted basket. A score is the change in that value over the window, in percent.</p>
-  <p>The small line next to each bar shows the currency's most recent stretch against the basket, starting from the dashed zero line: the last 4 hours on the 1h tab, one point per hour, and the last 24 hours on the 4h tab, one point per 4h bar. Each line is scaled to fit its own row, so it shows the shape of the move; the bar shows its size. Change gives that stretch's move with an arrow, and under it the newest bar's move alone. A move that rounds to 0.00% shows grey.</p>
-  <p>Because the average is over eight, the first currency's score minus the second's equals the pair's own move, give or take about a pip of quoting noise between the 28 prices. The driver table uses that to split each pair's move into its two sides. The side with the larger share drove the move.</p>
-  <h2 style="margin-top:22px">4-hour candle times</h2>
+  <h2>4-hour candle times</h2>
   <p>Six candles a day. Times on this page are New York and mark when a bar opens, so a 4h bar shown as 13:00 closes at 17:00 New York, 14:00 Pacific. The week's first candle opens Sunday 14:00 Pacific and the last closes Friday 14:00 Pacific.</p>
   <div class="stable-wrap" style="max-width:600px"><table class="stable" id="c4h">
     <thead><tr><th>#</th><th class="grp">Opens NY</th><th>Closes NY</th><th class="grp">Opens Pacific</th><th>Closes Pacific</th><th></th></tr></thead>
@@ -424,21 +437,25 @@ function renderRank(f){
   const pathOf = c => { const p=f.path[c].slice(-(f.nrecent+1)); return p.map(v=>v-p[0]); };
   const max = Math.max(...rows.map(r=>Math.abs(r.v)), 0.01);
   document.getElementById("rank").innerHTML = `<thead><tr><th class="rk">#</th><th style="text-align:left">Currency</th>
-    <th class="barcell" style="text-align:center">Gain / loss</th><th class="grp" style="text-align:left"><span class="lf">${pathLbl}</span><span class="ls">${recentShort}</span></th><th><span class="lf">Change</span><span class="ls">Chg</span></th></tr></thead><tbody>${
+    <th class="barcell" style="text-align:center">Gain / loss<span class="wl"><span class="lf">, </span>${f.gran==="H1" ? "24h" : "1 week"}</span></th><th class="grp" style="text-align:left"><span class="lf">${pathLbl}</span><span class="ls">${recentShort}</span></th><th><span class="lf">Change</span><span class="ls">Chg</span></th></tr></thead><tbody>${
     rows.map((r,i)=>{
       // Bars use up to 36% of the cell each side, leaving room for the value at the tip.
-      const w = Math.abs(r.v)/max*36;
+      // On phones the value sits on the other side of the zero line, so the bar can use nearly its whole half.
+      const phone = matchMedia("(max-width:600px)").matches;
+      const w = Math.abs(r.v)/max*(phone ? 46 : 36);
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
       // Thicker rule above the first currency below zero.
       const cut = r.v<0 && i>0 && rows[i-1].v>=0;
       return `<tr${cut?' class="zero-cut"':""}><td class="rk">${i+1}</td><td style="text-align:left"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div>
-          <span class="val ${cls(r.v)}" style="${r.v>=0 ? `left:calc(50% + ${w}% + 6px)` : `right:calc(50% + ${w}% + 6px)`}">${fmtPct(r.v)}</span></div></td>
+          <span class="val ${cls(r.v)}" style="${phone ? (r.v>=0 ? "right:calc(50% + 5px)" : "left:calc(50% + 5px)") : r.v>=0 ? `left:calc(50% + ${w}% + 6px)` : `right:calc(50% + ${w}% + 6px)`}">${fmtPct(r.v)}</span></div></td>
         <td class="grp sparkcell">${spark(pathOf(r.c), f.nrecent, COLOR[r.c], Math.max(...pathOf(r.c).map(Math.abs), 0.05))}</td>
-        <td class="recent"><div class="${clsR(r.r)}">${arrow(r.r)} ${fmtR(r.r)}</div>
-          <div class="sub ${clsR(r.l)}">${lastShort} ${fmtR(r.l)}</div></td></tr>`;}).join("")}</tbody>`;
+        <td class="recent"><div class="chg">
+            <span class="k">${recentShort}</span><span class="v ${clsR(r.r)}"><span class="ar">${arrow(r.r)} </span>${fmtR(r.r)}</span>
+            <span class="k">${lastShort}</span><span class="v sm ${clsR(r.l)}"><span class="ar">${arrow(r.l)} </span>${fmtR(r.l)}</span></div>
+          </td></tr>`;}).join("")}</tbody>`;
   document.getElementById("rank-lede").textContent =
-    `Each currency's gain or loss against an equal-weighted basket of all eight, over the last ${winLabel(f)}, from ${fmtT(f.lb_from)} to ${fmtT(f.to)}.`;
+    `Each currency's gain or loss against an equal-weighted basket of all eight, over the last ${f.gran==="H1" ? "24 hours" : "week"}.`;
 }
 
 function renderDrivers(f){
@@ -486,7 +503,7 @@ function narrowView(f){
 function renderChart(f){
   const cw = document.getElementById("chart").clientWidth, narrow = cw>0 && cw<NARROW;
   if(narrow) f = narrowView(f);
-  const W = narrow ? Math.max(300, cw) : 1100, H = narrow ? 300 : 420,
+  const W = narrow ? Math.max(300, cw) : 1100, H = narrow ? 380 : 560,
         L = narrow ? 40 : 48, R = narrow ? 96 : 118, T=10, B=28, PW=W-L-R, PH=H-T-B;
   const vis = DISPLAY.filter(c=>!hidden.has(c));
   const vals = vis.flatMap(c=>f.lines[c]).concat([0]);
@@ -542,7 +559,7 @@ function renderChart(f){
   };
   document.getElementById("hit").onmouseleave=()=>{ tip.hidden=true; xh.setAttribute("visibility","hidden"); };
   document.getElementById("chart-lede").textContent =
-    `Each point is that bar's gain or loss over the previous ${winLabel(f)}, the same measure as the Ranking, for the last ${f.t.length} bars since ${fmtT(f.from)}. The last point of each line is its Ranking score. Above zero, the currency is up over that window; a rising line means its score is improving.`;
+    `Each point is the Ranking's measure at that bar: the gain or loss over the ${f.gran==="H1" ? "24 hours" : "week"} before it. Shown for the last ${(()=>{const h=f.t.length*(f.gran==="H1"?1:4); return h<=24 ? `${h} hours` : `${Math.round(h/24)} days`;})()}.`;
 }
 
 // Header freshness, in the viewer's own time zone.
@@ -576,11 +593,12 @@ function render(){
   renderFresh();
   renderRank(f); renderChart(f); renderDrivers(f);
 }
-document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
-  G=b.dataset.g; saveView(); document.querySelectorAll("#tabs button").forEach(x=>x.setAttribute("aria-pressed",x===b)); render(); });
-document.querySelectorAll("#tabs button").forEach(x=>x.setAttribute("aria-pressed", x.dataset.g===G));
+const tabBtns = () => document.querySelectorAll("[data-tabs] button");
+const markTabs = () => tabBtns().forEach(x=>x.setAttribute("aria-pressed", x.dataset.g===G));
+tabBtns().forEach(b=>b.onclick=()=>{ G=b.dataset.g; saveView(); markTabs(); render(); });
+markTabs();
 renderLegend(); render();
-let resizeT; window.addEventListener("resize", ()=>{ clearTimeout(resizeT); resizeT=setTimeout(()=>renderChart(P.frames[G]), 150); });
+let resizeT; window.addEventListener("resize", ()=>{ clearTimeout(resizeT); resizeT=setTimeout(()=>{ renderRank(P.frames[G]); renderChart(P.frames[G]); }, 150); });
 // Mark the 4h candle the latest pull ended on (bar open time, New York).
 (function(){
   const last = P.frames.H4.to, open = last.slice(11);
