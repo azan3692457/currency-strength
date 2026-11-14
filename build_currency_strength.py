@@ -49,9 +49,8 @@ NY = ZoneInfo("America/New_York")
 ORDER = ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF", "JPY"]
 PAIRS = [f"{a}_{b}" for i, a in enumerate(ORDER) for b in ORDER[i + 1:]]
 DISPLAY = ["USD", "EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD"]
-# Same order and grouping as Market View's tables; EURGBP isn't there, so it goes last.
-MAJORS = ["GBP_USD", "EUR_USD", "USD_CHF", "AUD_USD", "NZD_USD", "USD_CAD"]
-CROSSES = ["USD_JPY", "GBP_JPY", "EUR_JPY", "AUD_JPY", "EUR_GBP"]
+# The seven USD pairs shown in the driver table.
+MAJORS = ["GBP_USD", "EUR_USD", "USD_CHF", "AUD_USD", "NZD_USD", "USD_CAD", "USD_JPY"]
 
 # (granularity, lookback bars for the score, bars shown on the chart)
 FRAMES = {"H1": (24, 72), "H4": (30, 30)}
@@ -131,8 +130,10 @@ def frame_payload(host, key, gran, lookback, shown):
     def pair_row(p):
         base, quote = p.split("_")
         move = (math.log(series[p][times[-1]]) - math.log(series[p][times[-1 - lookback]])) * 100
+        pip = 0.01 if quote == "JPY" else 0.0001
+        pips = (series[p][times[-1]] - series[p][times[-1 - lookback]]) / pip
         return {"pair": p.replace("_", ""), "base": base, "quote": quote,
-                "move": round(move, 3), "b": score[base], "q": score[quote]}
+                "move": round(move, 3), "pips": round(pips, 1), "b": score[base], "q": score[quote]}
 
     return {"gran": gran, "lookback": lookback, "bars": len(times),
             "from": stamps[0], "to": stamps[-1],
@@ -144,7 +145,7 @@ def frame_payload(host, key, gran, lookback, shown):
             # Each currency's path through the ranking window, from 0 at its start to its score at the end.
             "path": {c: [round((basket[c][i] - basket[c][-1 - lookback]) * 100, 3)
                          for i in range(len(times) - 1 - lookback, len(times))] for c in ORDER}, "score": score, "last": last, "recent": recent, "nrecent": RECENT[gran],
-            "pairs": [pair_row(p) for p in MAJORS + CROSSES]}
+            "pairs": [pair_row(p) for p in MAJORS]}
 
 
 def main():
@@ -217,6 +218,7 @@ h1{font-family:"IBM Plex Serif",Georgia,serif; font-weight:600;
 .meta div{display:flex; flex-direction:column; gap:1px}
 .meta dt{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:600}
 .meta dd{margin:0; font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:13px; font-variant-numeric:tabular-nums}
+.meta dd .sub{color:var(--muted); font-size:12px; margin-left:4px}
 h2{font-family:"IBM Plex Serif",Georgia,serif; font-weight:600; font-size:19px; letter-spacing:-.01em; margin:0 0 4px}
 .lede{color:var(--muted); font-size:14px; margin:0 0 18px}
 section{margin-bottom:48px}
@@ -257,6 +259,24 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .stable .grp{border-left:1px solid var(--rule-soft)}
 .stable tbody tr:hover td{background:var(--rule-soft)}
 .stable tr.div-top td{border-top:2px solid var(--rule)}
+.pushbar{position:relative; height:10px; min-width:170px; overflow:hidden}
+.pushbar .mid{position:absolute; left:50%; top:-4px; bottom:-4px; width:1px; background:var(--muted); opacity:.6}
+.pushbar .seg{position:absolute; top:0; height:10px; border-radius:2px}
+#drivers .ccy{white-space:nowrap; text-align:left}
+#drivers .ls{display:none}
+#drivers .pushwrap{display:flex; align-items:center; gap:10px}
+#drivers .pushwrap .pushbar{flex:1}
+#drivers .net{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; min-width:62px}
+#drivers .net .sub{font-size:11px; opacity:.75}
+#drivers .pill{display:inline-block; line-height:1.35; max-width:210px; white-space:normal}
+@media (max-width:600px){
+  #drivers th, #drivers td{padding:6px 5px; font-size:12px}
+  #drivers .pushbar, #drivers .ccy .sw{display:none}
+  #drivers .net{min-width:0}
+  #drivers .lf{display:none} #drivers .ls{display:inline}
+  #drivers .ccy{white-space:normal}
+  #drivers .pill{max-width:none}
+}
 .stable tr.latest td{background:color-mix(in srgb, var(--s1) 12%, transparent); font-weight:600}
 .stable tr.latest td:first-child{box-shadow:inset 3px 0 0 var(--s1)}
 .sw{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:7px; vertical-align:0}
@@ -316,6 +336,12 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .method{border-top:1px solid var(--rule); padding-top:22px; font-size:13.5px; color:var(--muted)}
 .method h2{color:var(--ink); font-size:16px; margin-bottom:10px}
 .method p{margin:0 0 10px}
+#c4h .sess .pill{margin-left:4px}
+@media (max-width:600px){
+  #c4h th, #c4h td{padding:6px 5px; font-size:12px}
+  #c4h .sess{white-space:normal}
+  #c4h .sess .pill{display:inline-block; margin:2px 0 0}
+}
 </style></head>
 <body>
 <div class="wrap">
@@ -360,18 +386,12 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 </section>
 
 <section class="method">
-  <h2>4-hour candle times</h2>
-  <p>Six candles a day. Times on this page are New York and mark when a bar opens, so a 4h bar shown as 13:00 closes at 17:00 New York, 14:00 Pacific. The week's first candle opens Sunday 14:00 Pacific and the last closes Friday 14:00 Pacific.</p>
-  <div class="stable-wrap" style="max-width:600px"><table class="stable" id="c4h">
-    <thead><tr><th>#</th><th class="grp">Opens NY</th><th>Closes NY</th><th class="grp">Opens Pacific</th><th>Closes Pacific</th><th></th></tr></thead>
-    <tbody>
-      <tr><td>1</td><td class="grp">17:00</td><td>21:00</td><td class="grp">14:00</td><td>18:00</td><td></td></tr>
-      <tr><td>2</td><td class="grp">21:00</td><td>01:00</td><td class="grp">18:00</td><td>22:00</td><td></td></tr>
-      <tr><td>3</td><td class="grp">01:00</td><td>05:00</td><td class="grp">22:00</td><td>02:00</td><td></td></tr>
-      <tr><td>4</td><td class="grp">05:00</td><td>09:00</td><td class="grp">02:00</td><td>06:00</td><td></td></tr>
-      <tr><td>5</td><td class="grp">09:00</td><td>13:00</td><td class="grp">06:00</td><td>10:00</td><td></td></tr>
-      <tr><td>6</td><td class="grp">13:00</td><td>17:00</td><td class="grp">10:00</td><td>14:00</td><td></td></tr>
-    </tbody></table></div>
+  <div class="candles">
+    <h2>4-hour candle times</h2>
+    <div class="stable-wrap" style="max-width:560px"><table class="stable" id="c4h">
+      <thead><tr><th>#</th><th class="grp">Opens NY</th><th id="c4h-tz">Your time</th><th class="grp" style="text-align:left">Main session</th></tr></thead>
+      <tbody></tbody></table></div>
+  </div>
 </section>
 </div>
 
@@ -464,25 +484,46 @@ function renderRank(f){
     `Each currency's gain or loss against an equal-weighted basket of all eight, over the last ${f.gran==="H1" ? "24 hours" : "week"}.`;
 }
 
+// Each side's push on the pair: the base currency's own gain/loss pushes the pair the same way,
+// the quote currency's pushes it the opposite way. A side whose push has the opposite sign to the
+// pair's move worked against it.
 function renderDrivers(f){
+  const word = (c, v) => `${c} ${v>=0 ? "strength" : "weakness"}`;
+  // Scale so the longest bar, stacked or not, fits its half of the cell.
+  const reach = p => (p.b*-p.q >= 0) ? Math.abs(p.b)+Math.abs(p.q) : Math.max(Math.abs(p.b), Math.abs(p.q));
+  const maxPush = Math.max(...f.pairs.map(reach), 0.01);
   const rows = f.pairs.map((p,i)=>{
-    const b = p.b, q = -p.q;   // q: the second currency's contribution to the pair's move
-    const tot = Math.abs(b)+Math.abs(q) || 1;
-    const bShare = Math.abs(b)/tot;
-    const lead = bShare>=0.5 ? p.base : p.quote;
-    const leadV = bShare>=0.5 ? p.b : p.q;
-    const share = Math.round(Math.max(bShare,1-bShare)*100);
-    const verdict = share < 60 ? `<span class="pill pill-m">Both</span>`
-      : `<span class="pill pill-b">${lead} ${leadV>=0?"strength":"weakness"}</span>`;
-    return `<tr class="${i===6?"div-top":""}"><td>${p.pair}</td><td class="${cls(p.move)}">${fmtPct(p.move)}</td>
-      <td class="grp ${cls(p.b)}">${fmtPct(p.b)}</td><td class="${cls(p.q)}">${fmtPct(p.q)}</td>
-      <td class="grp"><div class="splitbar"><div style="flex:${bShare*100};background:${COLOR[p.base]}"></div><div style="flex:${(1-bShare)*100};background:${COLOR[p.quote]}"></div></div></td>
-      <td>${share}% ${bShare>=0.5?p.base:p.quote}</td><td style="text-align:left">${verdict}</td></tr>`;
+    const pb = p.b, pq = -p.q;                       // pushes on the pair, in %
+    const big = Math.abs(pb)>=Math.abs(pq) ? {c:p.base, own:p.b, push:pb} : {c:p.quote, own:p.q, push:pq};
+    const small = big.c===p.base ? {c:p.quote, own:p.q, push:pq} : {c:p.base, own:p.b, push:pb};
+    const opposed = pb*pq < 0 && Math.abs(small.push) >= 0.02;
+    const share = Math.abs(big.push)/((Math.abs(pb)+Math.abs(pq))||1);
+    let verdict, kind;
+    if (opposed && Math.abs(small.push)/Math.abs(big.push) >= 0.6) { verdict = "Tug of war"; kind = "pill-m"; }
+    else if (opposed) { verdict = `${word(big.c, big.own)}, ${small.c} pushed back`; kind = "pill-b"; }
+    else if (share >= 0.6) { verdict = word(big.c, big.own); kind = "pill-b"; }
+    else { verdict = `Both: ${word(p.base, p.b)} + ${word(p.quote, p.q)}`; kind = "pill-m"; }
+    // Split bar: zero in the middle, right = pushing the pair up, left = pushing it down.
+    // Sides pushing the same way stack; a side pushing against the move is grey.
+    const seg = (push, color, offset) => { const w = Math.abs(push)/maxPush*47;
+      const pos = push>=0 ? `left:calc(50% + ${offset}%)` : `right:calc(50% + ${offset}%)`;
+      return `<div class="seg" style="${pos};width:${w}%;background:${color}"></div>`; };
+    const sameDir = pb*pq >= 0;
+    const moveSign = Math.sign(p.move) || 1;
+    const colorOf = (c, push) => Math.sign(push)===moveSign || Math.abs(push)<0.02 ? COLOR[c] : "var(--muted)";
+    const first = seg(big.push, colorOf(big.c, big.push), 0);
+    const second = seg(small.push, colorOf(small.c, small.push), sameDir ? Math.abs(big.push)/maxPush*47 : 0);
+    const bar = `<div class="pushbar"><div class="mid"></div>${first}${second}</div>`;
+    const net = `<div class="net ${cls(p.move)}"><div>${fmtPct(p.move)}</div><div class="sub">${p.pips>=0?"+":"−"}${Math.abs(Math.round(p.pips))} pips</div></div>`;
+    return `<tr><td>${p.pair}</td>
+      <td class="grp ccy"><span class="sw" style="background:${COLOR[p.base]}"></span>${p.base} <span class="${cls(p.b)}">${fmtPct(p.b)}</span></td>
+      <td class="ccy"><span class="sw" style="background:${COLOR[p.quote]}"></span>${p.quote} <span class="${cls(p.q)}">${fmtPct(p.q)}</span></td>
+      <td class="grp splitcell"><div class="pushwrap">${bar}${net}</div></td><td style="text-align:left"><span class="pill ${kind}">${verdict}</span></td></tr>`;
   }).join("");
-  document.getElementById("drivers").innerHTML = `<thead><tr><th>Pair</th><th>Pair move</th>
-    <th class="grp">1st ccy</th><th>2nd ccy</th><th class="grp">Split</th><th>Larger side</th><th style="text-align:left">Driver</th></tr></thead><tbody>${rows}</tbody>`;
+  document.getElementById("drivers").innerHTML = `<thead><tr><th>Pair</th>
+    <th class="grp" style="text-align:left">Base</th><th style="text-align:left">Quote</th><th class="grp splitcell" style="text-align:center"><span class="lf">Push on the pair → move</span><span class="ls">Move</span></th><th style="text-align:left">Driver</th></tr></thead><tbody>${rows}</tbody>`;
   document.getElementById("drv-lede").textContent =
-    `Pair move = first currency's gain/loss − second currency's gain/loss, over the same ${winLabel(f)}. "Both" means neither side contributed 60% or more.`;
+    `How much each currency pushed the pair over the last ${f.gran==="H1" ? "24 hours" : "week"}: right is up, left is down, grey worked against the move.`;
 }
 
 function renderLegend(){
@@ -569,10 +610,26 @@ function renderChart(f){
 }
 
 // Header freshness, in the viewer's own time zone.
-const fmtLocal = d => d.toLocaleString("en-US",{weekday:"short", hour:"numeric", minute:"2-digit", timeZoneName:"short"});
+const tzName = d => (new Intl.DateTimeFormat("en-US",{timeZoneName:"short"}).formatToParts(d).find(x=>x.type==="timeZoneName")||{}).value || "";
+const fmtClock = d => d.toLocaleString("en-US",{hour:"numeric", minute:"2-digit"});
+// "Today", "Yesterday", or the weekday, in the viewer's zone.
+function dayWord(d, now){
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86400000);
+  return diff===0 ? "Today" : diff===1 ? "Yesterday" : d.toLocaleString("en-US",{weekday:"short"});
+}
 function ago(ms){ const m=Math.round(ms/60000);
   if(m<1) return "just now"; if(m<60) return `${m} min ago`;
-  const h=Math.floor(m/60), r=m%60; return h<24 ? `${h} h ${r} min ago` : `${Math.floor(h/24)} d ago`; }
+  const h=Math.floor(m/60), r=m%60; return h<3 ? `${h} h ${r} min ago` : h<48 ? `${h} h ago` : `${Math.floor(h/24)} days ago`; }
+// "1:00–2:00 PM", keeping AM/PM on both ends only when they differ.
+function span(a, b){ const x=fmtClock(a), y=fmtClock(b);
+  return x.slice(-2)===y.slice(-2) ? `${x.slice(0,-3)}–${y}` : `${x}–${y}`; }
+// Next time the market opens (Sunday 17:00 New York), found hour by hour from now.
+function nextOpen(now){
+  const t = new Date(now); t.setUTCMinutes(0,0,0);
+  for(let i=0;i<80;i++){ t.setUTCHours(t.getUTCHours()+1); if(!marketClosed(t)) return t; }
+  return null;
+}
 function marketClosed(now){
   // FX is shut from Friday 17:00 to Sunday 17:00 New York.
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York", weekday:"short", hour:"numeric", hourCycle:"h23"})
@@ -582,13 +639,16 @@ function marketClosed(now){
 function renderFresh(){
   const f=P.frames[G], now=new Date(), built=new Date(P.built), closed=new Date(f.close_utc);
   const barH = f.gran==="H1" ? 1 : 4;
-  document.getElementById("m-fetch").textContent = `${fmtLocal(built)} · ${ago(now-built)}`;
-  document.getElementById("m-bar-dt").textContent = `Latest ${barH}h bar closed`;
-  document.getElementById("m-asof").textContent = `${fmtLocal(closed)} · ${ago(now-closed)}`;
+  const shut = marketClosed(now), opened = new Date(closed - barH*3600000), tz = tzName(now);
+  document.getElementById("m-fetch").textContent = `${dayWord(built, now)} ${fmtClock(built)} ${tz} · ${ago(now-built)}`;
+  document.getElementById("m-bar-dt").textContent = `Latest ${barH}h bar`;
+  // The bar's span in the viewer's zone; "ago" only while the market is open, when it says whether data is current.
+  document.getElementById("m-asof").textContent = `${dayWord(opened, now)} ${span(opened, closed)}`
+    + (shut ? " · last of the week" : ` · closed ${ago(now-closed)}`);
   // A new bar is due every barH hours; allow 30 min for the hourly run.
-  const late = now - closed > (barH*60 + 30)*60000;
+  const late = now - closed > (barH*60 + 30)*60000, reopen = shut && nextOpen(now);
   document.getElementById("m-status").innerHTML =
-    marketClosed(now) ? `<span class="pill pill-m">Market closed</span>`
+    shut ? `<span class="pill pill-m">Market closed</span>${reopen ? ` <span class="sub">reopens ${dayWord(reopen, now)==="Today" ? "today" : reopen.toLocaleString("en-US",{weekday:"short"})} ${fmtClock(reopen)}</span>` : ""}`
     : late ? `<span class="pill pill-warn">Behind</span>`
     : `<span class="pill pill-ok">Up to date</span>`;
 }
@@ -605,15 +665,31 @@ tabBtns().forEach(b=>b.onclick=()=>{ G=b.dataset.g; saveView(); markTabs(); rend
 markTabs();
 renderLegend(); render();
 let resizeT; window.addEventListener("resize", ()=>{ clearTimeout(resizeT); resizeT=setTimeout(()=>{ renderRank(P.frames[G]); renderChart(P.frames[G]); }, 150); });
-// Mark the 4h candle the latest pull ended on (bar open time, New York).
-(function(){
-  const last = P.frames.H4.to, open = last.slice(11);
-  document.querySelectorAll("#c4h tbody tr").forEach(tr=>{
-    const hit = tr.children[1].textContent === open;
-    tr.classList.toggle("latest", hit);
-    tr.lastElementChild.innerHTML = hit ? `<span class="pill pill-b">Latest · ${fmtT(last).split(" ").slice(0,3).join(" ")}</span>` : "";
-  });
-})();
+// 4-hour candle table: New York open times, the same times in the viewer's zone, the main session,
+// and markers for the candle the 4h data ends on and the one the market is in now.
+const CANDLES = [[17,"Sydney open"],[21,"Tokyo"],[1,"Tokyo → London"],[5,"London"],[9,"London / NY overlap"],[13,"New York afternoon"]];
+function nyMinutes(d){
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York", hour:"numeric", minute:"numeric", hourCycle:"h23"})
+    .formatToParts(d).map(x=>[x.type,x.value]));
+  return +p.hour*60 + +p.minute;
+}
+function renderCandles(){
+  const now = new Date();
+  const localMin = now.getHours()*60 + now.getMinutes();
+  const shift = ((localMin - nyMinutes(now)) % 1440 + 1440) % 1440;   // viewer's zone minus New York, in minutes
+  const tz = (new Intl.DateTimeFormat(undefined,{timeZoneName:"short"}).formatToParts(now).find(x=>x.type==="timeZoneName")||{}).value || "local";
+  document.getElementById("c4h-tz").textContent = `Your time (${tz})`;
+  const hhmm = m => `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+  const lastOpen = +P.frames.H4.to.slice(11,13);
+  const nowIdx = marketClosed(now) ? -1 : Math.floor((((nyMinutes(now)/60|0) - 17 + 24) % 24) / 4);
+  document.querySelector("#c4h tbody").innerHTML = CANDLES.map(([h,sess],i)=>{
+    const pills = (h===lastOpen ? `<span class="pill pill-b">Last closed</span> ` : "")
+                + (i===nowIdx ? `<span class="pill pill-ok">Now</span>` : "");
+    return `<tr class="${i===nowIdx?"latest":""}"><td>${i+1}</td><td class="grp">${hhmm(h*60)}</td><td>${hhmm((h*60+shift)%1440)}</td>
+      <td class="grp sess" style="text-align:left">${sess}${pills ? ` ${pills}` : ""}</td></tr>`;
+  }).join("");
+}
+renderCandles(); setInterval(renderCandles, 60000);
 </script>
 </body></html>
 """
