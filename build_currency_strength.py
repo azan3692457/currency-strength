@@ -49,8 +49,9 @@ NY = ZoneInfo("America/New_York")
 ORDER = ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF", "JPY"]
 PAIRS = [f"{a}_{b}" for i, a in enumerate(ORDER) for b in ORDER[i + 1:]]
 DISPLAY = ["USD", "EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD"]
-# The seven USD pairs shown in the driver table.
-MAJORS = ["GBP_USD", "EUR_USD", "USD_CHF", "AUD_USD", "NZD_USD", "USD_CAD", "USD_JPY"]
+# Driver table rows, in this order; the JPY crosses go under a divider.
+MAJORS = ["GBP_USD", "EUR_USD", "USD_CHF", "AUD_USD", "NZD_USD", "USD_CAD", "EUR_GBP", "USD_JPY"]
+CROSSES = ["GBP_JPY", "EUR_JPY", "AUD_JPY"]
 
 # (granularity, lookback bars for the score, bars shown on the chart)
 FRAMES = {"H1": (24, 72), "H4": (30, 30)}
@@ -145,7 +146,7 @@ def frame_payload(host, key, gran, lookback, shown):
             # Each currency's path through the ranking window, from 0 at its start to its score at the end.
             "path": {c: [round((basket[c][i] - basket[c][-1 - lookback]) * 100, 3)
                          for i in range(len(times) - 1 - lookback, len(times))] for c in ORDER}, "score": score, "last": last, "recent": recent, "nrecent": RECENT[gran],
-            "pairs": [pair_row(p) for p in MAJORS]}
+            "pairs": [pair_row(p) for p in MAJORS + CROSSES]}
 
 
 def main():
@@ -515,7 +516,7 @@ function renderDrivers(f){
     const second = seg(small.push, colorOf(small.c, small.push), sameDir ? Math.abs(big.push)/maxPush*47 : 0);
     const bar = `<div class="pushbar"><div class="mid"></div>${first}${second}</div>`;
     const net = `<div class="net ${cls(p.move)}"><div>${fmtPct(p.move)}</div><div class="sub">${p.pips>=0?"+":"−"}${Math.abs(Math.round(p.pips))} pips</div></div>`;
-    return `<tr><td>${p.pair}</td>
+    return `<tr class="${i===8?"div-top":""}"><td>${p.pair}</td>
       <td class="grp ccy"><span class="sw" style="background:${COLOR[p.base]}"></span>${p.base} <span class="${cls(p.b)}">${fmtPct(p.b)}</span></td>
       <td class="ccy"><span class="sw" style="background:${COLOR[p.quote]}"></span>${p.quote} <span class="${cls(p.q)}">${fmtPct(p.q)}</span></td>
       <td class="grp splitcell"><div class="pushwrap">${bar}${net}</div></td><td style="text-align:left"><span class="pill ${kind}">${verdict}</span></td></tr>`;
