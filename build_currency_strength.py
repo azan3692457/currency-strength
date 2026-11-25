@@ -324,6 +324,13 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .splitbar{display:flex; height:10px; border-radius:2px; overflow:hidden; min-width:120px; background:var(--rule-soft); gap:2px}
 
 #rank .mv{font-size:11px; margin-left:5px; font-variant-numeric:tabular-nums}
+#rank .turn{font-size:10.5px; margin:2px 0 0 15px; white-space:nowrap; opacity:.85}
+.turnband.up{fill:var(--up-vivid); opacity:.08}
+.turnband.dn{fill:var(--dn-vivid); opacity:.08}
+.turnlab{font:600 10.5px "IBM Plex Mono",ui-monospace,monospace}
+.turnlab.pos{fill:var(--up-vivid)} .turnlab.neg{fill:var(--dn-vivid)}
+.turnmk{stroke:var(--surface); stroke-width:1}
+@media (max-width:600px){ #rank .turn{margin-left:13px} }
 .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font:500 12px "IBM Plex Mono",ui-monospace,monospace; margin:0 0 8px}
 .legend button{all:unset; cursor:pointer; display:inline-flex; align-items:center}
 .legend button[aria-pressed="false"]{opacity:.35}
@@ -450,6 +457,36 @@ function spark(path, k, color, lim){
 }
 const arrow = v => r2(v)>0 ? "▲" : r2(v)<0 ? "▼" : "–";
 
+// Turns: a line's peak or trough, counted once the line has come back TURN_MIN from that extreme
+// (0.10% on the 1h tab, 0.25% on the 4h tab), so small wiggles don't count. Each turn has the bar
+// of the extreme (where it's drawn) and the bar it was confirmed on.
+const TURN_MIN = {H1:0.10, H4:0.25};
+function turnsOf(a, thr){
+  const out=[]; let d=0, ei=0, ev=a[0];
+  for(let i=1;i<a.length;i++){
+    const v=a[i];
+    if((d>=0 && v>ev) || (d<=0 && v<ev)){ if(d===0) d = v>ev ? 1 : -1; ev=v; ei=i; }
+    else if(d>=0 && ev-v>=thr){ out.push({type:"peak", i:ei, conf:i, v:ev}); d=-1; ev=v; ei=i; }
+    else if(d<=0 && v-ev>=thr){ out.push({type:"trough", i:ei, conf:i, v:ev}); d=1; ev=v; ei=i; }
+  }
+  return out;
+}
+const turnsFor = f => Object.fromEntries(DISPLAY.map(c=>[c, turnsOf(f.lines[c], TURN_MIN[f.gran])]));
+// A pair is turning when its two currencies turn opposite ways within PAIR_GAP bars (4 hours on the
+// 1h tab, 8 hours on the 4h tab): base bottoms while quote tops = pair turning up, and the reverse.
+const PAIR_GAP = {H1:4, H4:2};
+function pairTurns(f, T){
+  const out=[];
+  f.pairs.forEach(p=>{
+    T[p.base].forEach(a=>T[p.quote].forEach(b=>{
+      if(a.type===b.type || Math.abs(a.i-b.i)>PAIR_GAP[f.gran]) return;
+      out.push({pair:p.pair, base:p.base, quote:p.quote, up:a.type==="trough",
+                from:Math.min(a.i,b.i), to:Math.max(a.i,b.i)});
+    }));
+  });
+  return out;
+}
+
 function renderRank(f){
   const rows = DISPLAY.map(c=>({c, v:f.score[c], l:f.last[c], r:f.recent[c]})).sort((a,b)=>b.v-a.v);
   // Rank at the previous bar, from the chart's second-to-last point (the same measure one bar earlier).
@@ -463,6 +500,11 @@ function renderRank(f){
   // rebased to start at zero, all in colour.
   const pathOf = c => { const p=f.path[c].slice(-(f.nrecent+1)); return p.map(v=>v-p[0]); };
   const max = Math.max(...rows.map(r=>Math.abs(r.v)), 0.01);
+  const T = turnsFor(f), unitH = f.gran==="H1" ? 1 : 4;
+  const turnNote = c => { const t = T[c][T[c].length-1]; if(!t) return "";
+    const h = (f.t.length-1 - t.i)*unitH, ago = h<48 ? `${h}h` : `${Math.round(h/24)}d`;
+    const up = t.type==="trough";
+    return `<div class="turn ${up?"pos":"neg"}" title="Its line last ${up?"bottomed":"topped"} ${ago} ago">${up?"▲":"▼"}<span class="lf"> turned ${up?"up":"down"}</span> ${ago} ago</div>`; };
   document.getElementById("rank").innerHTML = `<thead><tr><th class="rk">#</th><th style="text-align:left">Currency</th>
     <th class="barcell" style="text-align:center">Gain / loss<span class="wl"><span class="lf">, </span>${f.gran==="H1" ? "24h" : "1 week"}</span></th><th class="grp" style="text-align:left"><span class="lf">${pathLbl}</span><span class="ls">${recentShort}</span></th><th><span class="lf">Change</span><span class="ls">Chg</span></th></tr></thead><tbody>${
     rows.map((r,i)=>{
@@ -473,7 +515,7 @@ function renderRank(f){
       const fill = r.v>=0 ? `left:50%;width:${w}%` : `left:${50-w}%;width:${w}%`;
       // Thicker rule above the first currency below zero.
       const cut = r.v<0 && i>0 && rows[i-1].v>=0;
-      return `<tr${cut?' class="zero-cut"':""}><td class="rk">${i+1}</td><td style="text-align:left;white-space:nowrap"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}${moved(r.c,i)}</td>
+      return `<tr${cut?' class="zero-cut"':""}><td class="rk">${i+1}</td><td style="text-align:left;white-space:nowrap"><span class="sw" style="background:${COLOR[r.c]}"></span>${flag(r.c)}${r.c}${moved(r.c,i)}${turnNote(r.c)}</td>
         <td class="barcell"><div class="bar"><div class="mid"></div><div class="fill" style="${fill};background:${COLOR[r.c]}"></div>
           <span class="val ${cls(r.v)}" style="${phone ? (r.v>=0 ? "right:calc(50% + 5px)" : "left:calc(50% + 5px)") : r.v>=0 ? `left:calc(50% + ${w}% + 6px)` : `right:calc(50% + ${w}% + 6px)`}">${fmtPct(r.v)}</span></div></td>
         <td class="grp sparkcell">${spark(pathOf(r.c), f.nrecent, COLOR[r.c], Math.max(...pathOf(r.c).map(Math.abs), 0.05))}</td>
@@ -576,6 +618,21 @@ function renderChart(f){
     const d=f.lines[c].map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
     s+=`<path d="${d}" fill="none" stroke="${COLOR[c]}" stroke-width="2" stroke-linejoin="round"/>`;
   });
+  // Turns: ▼ above each peak and ▲ below each trough, in the currency's colour. A pair whose two
+  // currencies (both shown) turned opposite ways close together gets a shaded band and a label.
+  const TU = turnsFor(f);
+  // Bands only with exactly two currencies shown; with more they pile up.
+  const shownPairs = vis.length===2 ? pairTurns(f, TU).filter(p=>vis.includes(p.base) && vis.includes(p.quote)) : [];
+  shownPairs.forEach((p,k)=>{
+    const x0=x(p.from)-3, x1=Math.max(x(p.to)+3, x0+6), ly=T+12+(k%3)*13;
+    s+=`<rect class="turnband ${p.up?"up":"dn"}" x="${x0}" y="${T}" width="${x1-x0}" height="${PH}"/>`;
+    s+=`<text class="turnlab ${p.up?"pos":"neg"}" x="${x0+3}" y="${ly}">${p.pair} ${p.up?"▲":"▼"}</text>`;
+  });
+  vis.forEach(c=>TU[c].forEach(t=>{
+    const cx=x(t.i), cy=y(t.v), up=t.type==="trough", d=up?1:-1, by=cy+d*7;
+    // Apex 7px from the point: below a trough pointing up, above a peak pointing down.
+    s+=`<path class="turnmk" d="M${cx},${by} l-5,${d*8} l10,0 z" fill="${COLOR[c]}"/>`;
+  }));
   // Right edge: close the plot with an axis line, mark each line's last point, and tie it
   // to its label (currency and latest value) with a short leader, labels nudged apart.
   s+=`<line class="edge" x1="${L+PW}" x2="${L+PW}" y1="${T}" y2="${T+PH}"/>`;
@@ -607,7 +664,8 @@ function renderChart(f){
   };
   document.getElementById("hit").onmouseleave=()=>{ tip.hidden=true; xh.setAttribute("visibility","hidden"); };
   document.getElementById("chart-lede").textContent =
-    `Each point is the Ranking's measure at that bar: the gain or loss over the ${f.gran==="H1" ? "24 hours" : "week"} before it. Shown for the last ${(()=>{const h=f.t.length*(f.gran==="H1"?1:4); return h<=24 ? `${h} hours` : `${Math.round(h/24)} days`;})()}.`;
+    `Each point is the Ranking's measure at that bar: the gain or loss over the ${f.gran==="H1" ? "24 hours" : "week"} before it. Shown for the last ${(()=>{const h=f.t.length*(f.gran==="H1"?1:4); return h<=24 ? `${h} hours` : `${Math.round(h/24)} days`;})()}. `
+    + `▲ and ▼ mark where a line bottomed or topped, once it had come back ${TURN_MIN[f.gran].toFixed(2)}%. Show just two currencies, such as GBP and USD, to shade where they turned opposite ways within ${PAIR_GAP[f.gran]*(f.gran==="H1"?1:4)} hours.`;
 }
 
 // Header freshness, in the viewer's own time zone.
