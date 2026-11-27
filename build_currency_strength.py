@@ -331,6 +331,16 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .turnlab.pos{fill:var(--up-vivid)} .turnlab.neg{fill:var(--dn-vivid)}
 .turnmk{stroke:var(--surface); stroke-width:1}
 @media (max-width:600px){ #rank .turn{margin-left:13px} }
+/* Pair switch above the chart legend: one click shows just that pair's two currencies. */
+.pairs{display:flex; flex-wrap:wrap; gap:5px; margin:0 0 12px}
+.pairs button{font:600 11.5px "IBM Plex Mono",ui-monospace,monospace; padding:4px 9px; border-radius:5px;
+  border:1px solid var(--rule); background:var(--surface); color:var(--muted); cursor:pointer}
+.pairs button[aria-pressed="true"]{color:var(--ink); border-color:var(--ink)}
+.pairs select{display:none; font:600 12.5px "IBM Plex Mono",ui-monospace,monospace; padding:5px 8px;
+  border:1px solid var(--rule); border-radius:5px; background:var(--surface); color:var(--ink)}
+@media (max-width:600px){ .pairs button{display:none} .pairs select{display:block} }
+#drivers a.pl{color:inherit; text-decoration:none; border-bottom:1px dotted var(--muted)}
+#drivers a.pl:hover{border-bottom-style:solid}
 .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font:500 12px "IBM Plex Mono",ui-monospace,monospace; margin:0 0 8px}
 .legend button{all:unset; cursor:pointer; display:inline-flex; align-items:center}
 .legend button[aria-pressed="false"]{opacity:.35}
@@ -381,6 +391,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
     </div></div>
   <p class="lede" id="chart-lede"></p>
   <div class="panel" id="chart-panel">
+    <div class="pairs" id="pairs"></div>
     <div class="legend" id="legend"></div>
     <div id="chart"></div>
     <div class="tip" id="tip" hidden></div>
@@ -411,7 +422,8 @@ const FLAG = {USD:"🇺🇸", EUR:"🇪🇺", GBP:"🇬🇧", JPY:"🇯🇵", CH
 const flag = c => `<span class="flag" aria-hidden="true">${FLAG[c]}</span>`;
 let G = "H1";
 // Shown by default: USD, EUR, GBP, JPY; click a legend entry to show the rest.
-const hidden = new Set(["CHF", "AUD", "NZD", "CAD"]);
+const DEFAULT_HIDDEN = ["CHF", "AUD", "NZD", "CAD"];
+const hidden = new Set(DEFAULT_HIDDEN);
 // The tab and the currencies shown on the chart live in the URL (?tf=4h&show=USD,GBP),
 // so they survive a reload and a bookmark or shared link opens the same view.
 (function(){
@@ -558,18 +570,44 @@ function renderDrivers(f){
     const second = seg(small.push, colorOf(small.c, small.push), sameDir ? Math.abs(big.push)/maxPush*47 : 0);
     const bar = `<div class="pushbar"><div class="mid"></div>${first}${second}</div>`;
     const net = `<div class="net ${cls(p.move)}"><div>${fmtPct(p.move)}</div><div class="sub">${p.pips>=0?"+":"−"}${Math.abs(Math.round(p.pips))} pips</div></div>`;
-    return `<tr class="${i===8?"div-top":""}"><td>${p.pair}</td>
+    return `<tr class="${i===8?"div-top":""}"><td><a class="pl" href="#chart-panel" data-pair="${p.pair}" title="Show ${p.pair} in Strength Over Time">${p.pair}</a></td>
       <td class="grp ccy"><span class="sw" style="background:${COLOR[p.base]}"></span>${p.base} <span class="${cls(p.b)}">${fmtPct(p.b)}</span></td>
       <td class="ccy"><span class="sw" style="background:${COLOR[p.quote]}"></span>${p.quote} <span class="${cls(p.q)}">${fmtPct(p.q)}</span></td>
       <td class="grp splitcell"><div class="pushwrap">${bar}${net}</div></td><td style="text-align:left"><span class="pill ${kind}">${verdict}</span></td></tr>`;
   }).join("");
   document.getElementById("drivers").innerHTML = `<thead><tr><th>Pair</th>
     <th class="grp" style="text-align:left">Base</th><th style="text-align:left">Quote</th><th class="grp splitcell" style="text-align:center"><span class="lf">Push on the pair → move</span><span class="ls">Move</span></th><th style="text-align:left">Driver</th></tr></thead><tbody>${rows}</tbody>`;
+  document.querySelectorAll("#drivers a.pl").forEach(a=>a.onclick=e=>{ e.preventDefault(); showPair(a.dataset.pair);
+    document.getElementById("chart-panel").scrollIntoView({behavior:"smooth", block:"start"}); });
   document.getElementById("drv-lede").textContent =
     `How much each currency pushed the pair over the last ${f.gran==="H1" ? "24 hours" : "week"}: right is up, left is down, grey worked against the move.`;
 }
 
+// Pair switch: picking a pair shows only its base and quote, which also turns on the chart's
+// turn shading (drawn whenever exactly two currencies are shown). "Default" restores USD, EUR, GBP, JPY.
+const PAIRS = P.frames.H1.pairs.map(p=>({pair:p.pair, base:p.base, quote:p.quote}));
+function currentPair(){ const vis = DISPLAY.filter(c=>!hidden.has(c));
+  return vis.length!==2 ? null : PAIRS.find(p=>vis.includes(p.base) && vis.includes(p.quote)) || null; }
+const isDefault = () => hidden.size===DEFAULT_HIDDEN.length && DEFAULT_HIDDEN.every(c=>hidden.has(c));
+function showPair(name){
+  hidden.clear();
+  if (name==="default") DEFAULT_HIDDEN.forEach(c=>hidden.add(c));
+  else { const p = PAIRS.find(x=>x.pair===name); DISPLAY.filter(c=>c!==p.base && c!==p.quote).forEach(c=>hidden.add(c)); }
+  saveView(); renderLegend(); renderChart(P.frames[G]);
+}
+function renderPairs(){
+  const cur = currentPair(), def = isDefault();
+  const btn = (v, label, on) => `<button data-p="${v}" aria-pressed="${on}">${label}</button>`;
+  const opt = (v, label, on) => `<option value="${v}"${on?" selected":""}>${label}</option>`;
+  document.getElementById("pairs").innerHTML =
+    btn("default","Default",def) + PAIRS.map(p=>btn(p.pair,p.pair,cur&&cur.pair===p.pair)).join("") +
+    `<select aria-label="Pair">${(!cur&&!def) ? `<option value="" selected>Custom</option>` : ""}${opt("default","Default currencies",def)}${PAIRS.map(p=>opt(p.pair,p.pair,cur&&cur.pair===p.pair)).join("")}</select>`;
+  document.querySelectorAll("#pairs button").forEach(b=>b.onclick=()=>showPair(b.dataset.p));
+  document.querySelector("#pairs select").onchange = e => { if (e.target.value) showPair(e.target.value); };
+}
+
 function renderLegend(){
+  renderPairs();
   document.getElementById("legend").innerHTML = DISPLAY.map(c=>
     `<button data-c="${c}" aria-pressed="${!hidden.has(c)}"><span class="sw" style="background:${COLOR[c]}"></span>${c}</button>`).join("");
   document.querySelectorAll("#legend button").forEach(b=>b.onclick=()=>{
@@ -665,7 +703,7 @@ function renderChart(f){
   document.getElementById("hit").onmouseleave=()=>{ tip.hidden=true; xh.setAttribute("visibility","hidden"); };
   document.getElementById("chart-lede").textContent =
     `Each point is the Ranking's measure at that bar: the gain or loss over the ${f.gran==="H1" ? "24 hours" : "week"} before it. Shown for the last ${(()=>{const h=f.t.length*(f.gran==="H1"?1:4); return h<=24 ? `${h} hours` : `${Math.round(h/24)} days`;})()}. `
-    + `▲ and ▼ mark where a line bottomed or topped, once it had come back ${TURN_MIN[f.gran].toFixed(2)}%. Show just two currencies, such as GBP and USD, to shade where they turned opposite ways within ${PAIR_GAP[f.gran]*(f.gran==="H1"?1:4)} hours.`;
+    + `▲ and ▼ mark where a line bottomed or topped, once it had come back ${TURN_MIN[f.gran].toFixed(2)}%. Pick a pair to shade where they turned opposite ways within ${PAIR_GAP[f.gran]*(f.gran==="H1"?1:4)} hours.`;
 }
 
 // Header freshness, in the viewer's own time zone.
